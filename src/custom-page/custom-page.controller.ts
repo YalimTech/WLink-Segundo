@@ -181,23 +181,40 @@ export class CustomPageController {
                     const res = await makeApiRequest('/api/instances');
                     const updatedInstance = res.instances.find(inst => inst.id === instanceId);
                     
-                    if (updatedInstance && updatedInstance.state === 'authorized') {
-                      console.log('Instance authorized! Stopping poll.');
-                      clearInterval(pollRef.current);
-                      setShowQr(false);
-                      setInstances(res.instances);
+                    if (updatedInstance) {
+                      // Actualiza la lista de instancias para reflejar el estado más reciente
+                      setInstances(res.instances); 
+                      
+                      // NUEVA LÓGICA: Si el estado cambia y no es 'qr_code' o 'starting', cerrar el modal QR.
+                      // Esto maneja cuando el QR expira, se escanea, o la conexión falla mientras el modal está abierto.
+                      if (showQr && updatedInstance.state !== 'qr_code' && updatedInstance.state !== 'starting') {
+                        console.log(`Instance state for ${updatedInstance.name} changed to ${updatedInstance.state}. Closing QR modal.`);
+                        clearInterval(pollRef.current);
+                        setShowQr(false);
+                        setQr(''); // Limpiar el QR para asegurar que no se muestre un QR viejo
+                      }
+
+                      // Si está autorizado, detener el sondeo y cerrar QR si está abierto
+                      if (updatedInstance.state === 'authorized') {
+                        console.log('Instance authorized! Stopping poll.');
+                        clearInterval(pollRef.current);
+                        setShowQr(false);
+                        setQr(''); // Limpiar el QR
+                      }
                     }
                   } catch (error) {
                     console.error('Polling failed:', error);
                     clearInterval(pollRef.current);
+                    setShowQr(false); // Cierra el QR si el sondeo falla completamente
+                    setQr(''); // Limpiar el QR
                   }
                 }, 3000); // Verifica cada 3 segundos
               }
 
               async function connectInstance(id) {
                 setQr('');
-                setShowQr(true);
-                if (pollRef.current) clearInterval(pollRef.current); // Detener sondeo anterior
+                setShowQr(true); // Mostrar el modal del QR
+                if (pollRef.current) clearInterval(pollRef.current); // Detener sondeo anterior si lo hay
 
                 try {
                   const res = await makeApiRequest('/api/qr/' + id);
@@ -212,11 +229,12 @@ export class CustomPageController {
                     throw new Error('Unexpected QR response format.');
                   }
                   
+                  // Iniciar el sondeo para el estado de la instancia
                   startPolling(id);
 
                 } catch (err) {
                   setQr('');
-                  setShowQr(false);
+                  setShowQr(false); // Asegurarse de que el modal se cierre si la petición de QR falla.
                   alert('Error getting QR: ' + err.message);
                 }
               }
@@ -280,7 +298,7 @@ export class CustomPageController {
                                   ? 'bg-red-200 text-red-800' // Desconectado (rojo para mayor visibilidad)
                                   : inst.state === 'yellowCard' || inst.state === 'blocked'
                                   ? 'bg-red-500 text-white' // Estados de error o bloqueado (más oscuro)
-                                  : 'bg-gray-200 text-gray-800') // Para cualquier otro estado desconocido/neutro
+                                  : 'bg-gray-200 text-gray-800') // Para cualquier otro estado no mapeado
                               }
                             >
                               {/* CORRECCIÓN: Ajustar la lógica para los estados de visualización */}

@@ -1,0 +1,30 @@
+ version: "3.8"
+
+services:
+  bridge:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      secrets:
+        - npm_token
+    ports:
+      ports:
+  - "${APP_PORT}:3000"
+
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - GHL_CLIENT_ID=${GHL_CLIENT_ID}
+      - GHL_CLIENT_SECRET=${GHL_CLIENT_SECRET}
+      - GHL_CONVERSATION_PROVIDER_ID=${GHL_CONVERSATION_PROVIDER_ID}
+      - APP_URL=${APP_URL}
+      - EVOLUTION_API_URL=${EVOLUTION_API_URL}
+      - EVOLUTION_CONSOLE_URL=${EVOLUTION_CONSOLE_URL}
+      - GHL_SHARED_SECRET=${GHL_SHARED_SECRET}
+      - INSTANCE_TOKEN=${INSTANCE_TOKEN}
+    command: sh -c "npx prisma migrate deploy && npm run build && npm run start:prod"
+    restart: unless-stopped
+
+secrets:
+  npm_token:
+    environment: NPM_TOKEN
+

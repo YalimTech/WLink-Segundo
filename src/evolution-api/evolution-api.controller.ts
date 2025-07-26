@@ -62,7 +62,11 @@ export class EvolutionApiController {
     return {
       success: true,
       instances: refreshed.map((instance) => ({
-        id: instance.idInstance,
+        // ✅ --- CORRECCIÓN APLICADA AQUÍ ---
+        // Se devuelve el 'id' numérico (BigInt) que el frontend necesita para
+        // llamar a /api/qr/:id. Antes devolvía 'instance.idInstance'.
+        id: instance.id,
+        // --- FIN DE LA CORRECCIÓN ---
         name: instance.name,
         state: instance.state,
       })),
@@ -98,30 +102,28 @@ export class EvolutionApiController {
   
   /**
    * Obtiene un nuevo código QR para una instancia desconectada.
+   * ESTA RUTA YA NO SE UTILIZA, SE HA MOVIDO A qr.controller.ts
    */
-
-  
- @Get('qr/:instance')
-async getQrCode(@Param('instance') instance: string, @Req() req: AuthReq) {
-  const { locationId } = req;
-  const inst = await this.prisma.getInstance(instance);
-  if (!inst || inst.userId !== locationId) {
-    throw new HttpException('Instance not found or not authorized', HttpStatus.FORBIDDEN);
+  @Get('qr/:instance')
+  async getQrCode(@Param('instance') instance: string, @Req() req: AuthReq) {
+    const { locationId } = req;
+    const inst = await this.prisma.getInstance(instance);
+    if (!inst || inst.userId !== locationId) {
+      throw new HttpException('Instance not found or not authorized', HttpStatus.FORBIDDEN);
+    }
+    try {
+      const qr = await this.evolutionService.getQrCode(inst.apiTokenInstance, instance);
+      return {
+        success: true,
+        type: qr.type,  // 'qr' o 'code'
+        data: qr.data,  // base64 o string
+      };
+    } catch (err: any) {
+      this.logger.error(`Failed to get QR for ${instance}: ${err.message}`);
+      if (err instanceof HttpException) throw err;
+      throw new HttpException('Failed to fetch QR code', HttpStatus.INTERNAL_SERVER_ERROR);
+    }
   }
-  try {
-    const qr = await this.evolutionService.getQrCode(inst.apiTokenInstance, instance);
-    return {
-      success: true,
-      type: qr.type,  // 'qr' o 'code'
-      data: qr.data,  // base64 o string
-    };
-  } catch (err: any) {
-    this.logger.error(`Failed to get QR for ${instance}: ${err.message}`);
-    if (err instanceof HttpException) throw err;
-    throw new HttpException('Failed to fetch QR code', HttpStatus.INTERNAL_SERVER_ERROR);
-  }
-}
-
 
   /**
    * Desconecta una instancia de WhatsApp sin borrarla.

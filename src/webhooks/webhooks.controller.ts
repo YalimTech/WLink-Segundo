@@ -16,7 +16,8 @@ import { EvolutionApiService } from '../evolution-api/evolution-api.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GhlWebhookDto } from '../evolution-api/dto/ghl-webhook.dto';
-import { EvolutionWebhook } from '../types';
+// ✅ CORRECCIÓN: Importar InstanceState para usar el tipo explícitamente.
+import { EvolutionWebhook, InstanceState } from '../types';
 import { DynamicInstanceGuard } from './guards/dynamic-instance.guard';
 
 @Controller('webhooks')
@@ -38,7 +39,6 @@ export class WebhooksController {
     this.logger.log(
       `Received Evolution Webhook for instance: ${payload.instance}, Event: ${payload.event}`,
     );
-    // Responde inmediatamente a la API para evitar timeouts.
     res.status(HttpStatus.OK).send('Webhook received');
 
     try {
@@ -47,15 +47,15 @@ export class WebhooksController {
         return;
       }
 
-      // ✅ CORRECCIÓN: Lógica para manejar la actualización del estado de la conexión.
       if (payload.event === 'connection.update' && payload.data?.state) {
         this.logger.log(
           `Handling connection update for ${payload.instance}. New state: ${payload.data.state}`,
         );
 
-        const appState = payload.data.state === 'open' ? 'authorized' : 'unauthorized';
+        // ✅ CORRECCIÓN: Definir explícitamente el tipo de la variable appState.
+        const appState: InstanceState =
+          payload.data.state === 'open' ? 'authorized' : 'unauthorized';
 
-        // ✅ CORRECCIÓN: Usar el nuevo método del PrismaService en lugar de acceder directamente.
         const updated = await this.prisma.updateInstanceStateByName(
           payload.instance,
           appState,
@@ -72,7 +72,6 @@ export class WebhooksController {
         }
       }
 
-      // Opcional: Delegar al servicio para manejar otros eventos (como mensajes entrantes).
       await this.evolutionApiService.handleEvolutionWebhook(payload);
 
     } catch (error) {
@@ -95,7 +94,6 @@ export class WebhooksController {
     const messageId = ghlWebhook.messageId;
 
     this.logger.debug(`Received GHL Webhook for location ${locationId}`);
-
     res.status(HttpStatus.OK).send('Webhook received');
 
     try {

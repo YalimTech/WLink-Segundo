@@ -54,27 +54,6 @@ export class PrismaService
     }
   }
 
-  // ✅ --- INICIO DE LA CORRECCIÓN ---
-  // Se añade un método público para obtener una instancia por su ID numérico (BigInt).
-  // Esto evita el error de compilación en el controlador del QR.
-  async getInstanceById(id: bigint): Promise<(Instance & { user: User }) | null> {
-    if (this.client) {
-      return this.client.instance.findUnique({
-        where: { id },
-        include: { user: true },
-      });
-    }
-    // Lógica de fallback para la memoria, si es necesaria.
-    for (const inst of this.memory!.instances.values()) {
-      if (inst.id === id) {
-        const user = this.memory!.users.get(inst.userId);
-        return { ...inst, user } as any;
-      }
-    }
-    return null;
-  }
-  // --- FIN DE LA CORRECCIÓN ---
-
   // --- MÉTODOS DE USUARIO ---
   async createUser(data: UserCreateData): Promise<User> {
     if (this.client) {
@@ -172,6 +151,34 @@ export class PrismaService
     (inst as any).state = state;
     this.memory!.instances.set(parseId(idInstance), inst);
     return inst;
+  }
+  
+  // ✅ --- CORRECCIÓN: MÉTODO AÑADIDO ---
+  /**
+   * Actualiza el estado de una o más instancias buscándolas por su nombre único.
+   * @param instanceName - El nombre de la instancia (ej: 'YC2').
+   * @param state - El nuevo estado (ej: 'authorized').
+   * @returns El número de registros actualizados.
+   */
+  async updateInstanceStateByName(instanceName: string, state: InstanceState): Promise<{ count: number }> {
+    if (this.client) {
+      this.logger.log(`Updating state for instance(s) with name '${instanceName}' to '${state}'`);
+      return this.client.instance.updateMany({
+        where: { name: instanceName },
+        data: { state },
+      });
+    }
+    // Fallback para la base de datos en memoria
+    let count = 0;
+    for (const [key, inst] of this.memory!.instances.entries()) {
+      if (inst.name === instanceName) {
+        inst.state = state;
+        this.memory!.instances.set(key, inst);
+        count++;
+      }
+    }
+    this.logger.log(`In-memory update: ${count} instance(s) updated.`);
+    return { count };
   }
 
   async updateInstanceSettings(idInstance: string, settings: Settings): Promise<Instance & { user: User }> {

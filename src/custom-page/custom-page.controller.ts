@@ -263,24 +263,25 @@ export class CustomPageController {
                     <div className="space-y-4">
                       {instances.length === 0 && <p className="text-gray-500">No instances added.</p>}
                       {instances.map((inst) => (
-                        <div key={inst.id} className="flex justify-between items-center p-4 border rounded-xl">
-                          <div>
-                            <p className="font-semibold">{inst.name || 'Unnamed'}</p>
-                            <p className="text-sm text-gray-500">{inst.id}</p>
-                            <span className={"text-xs px-2 py-1 rounded-full " + (inst.state === 'authorized' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800')}>
-                              {inst.state === 'qr_code' ? 'Awaiting Scan' : inst.state}
-                            </span>
-                          </div>
-                          <div className="flex gap-2">
-                            {inst.state === 'authorized' ? (
-                              <button onClick={() => logoutInstance(inst.id)} className="px-3 py-1 rounded-xl bg-yellow-500 text-white">Logout</button>
-                            ) : (
-                              <button onClick={() => connectInstance(inst.id)} className="px-3 py-1 rounded-xl bg-green-600 text-white">Connect</button>
-                            )}
-                            <button onClick={() => deleteInstance(inst.id)} className="px-3 py-1 rounded-xl bg-red-600 text-white">Delete</button>
-                          </div>
-                        </div>
-                      ))}
+  <div key={inst.instanceId} className="flex justify-between items-center p-4 border rounded-xl">
+    <div>
+      <p className="font-semibold">{inst.name || 'Unnamed'}</p>
+      <p className="text-sm text-gray-500">{inst.instanceId}</p>
+      <span className={"text-xs px-2 py-1 rounded-full " + (inst.state === 'authorized' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800')}>
+        {inst.state === 'qr_code' ? 'Awaiting Scan' : inst.state}
+      </span>
+    </div>
+    <div className="flex gap-2">
+      {inst.state === 'authorized' ? (
+        <button onClick={() => logoutInstance(inst.instanceId)} className="px-3 py-1 rounded-xl bg-yellow-500 text-white">Logout</button>
+      ) : (
+        <button onClick={() => connectInstance(inst.instanceId)} className="px-3 py-1 rounded-xl bg-green-600 text-white">Connect</button>
+      )}
+      <button onClick={() => deleteInstance(inst.instanceId)} className="px-3 py-1 rounded-xl bg-red-600 text-white">Delete</button>
+    </div>
+  </div>
+))}
+
                     </div>
                   </div>
                   <div className="bg-white rounded-2xl shadow-md p-6 space-y-4">

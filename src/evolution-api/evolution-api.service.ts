@@ -186,30 +186,19 @@ export class EvolutionApiService extends BaseAdapter<
   }
 
   public async handleEvolutionWebhook(webhook: EvolutionWebhook): Promise<void> {
-    const instance = await this.prisma.getInstance(webhook.instance);
-    if (!instance) {
-        this.logger.warn(`Webhook for unknown instance ${webhook.instance}. Ignoring.`);
-        return;
+    const instanceName = webhook.instance;
+    if (!instanceName) {
+      this.logger.warn('Webhook received without an instance name. Ignoring.');
+      return;
     }
 
-    if (webhook.event === 'messages.upsert' && webhook.data?.key?.remoteJid) {
-      const { data } = webhook;
-      const senderPhone = data.key.remoteJid.split('@')[0];
-      const senderName = data.pushName || `WhatsApp User ${senderPhone.slice(-4)}`;
-      const ghlContact = await this.findOrCreateGhlContact(
-        instance.userId,
-        senderPhone,
-        senderName,
-        instance.idInstance,
-      );
-      const transformedMsg = this.transformer.toPlatformMessage(webhook);
-      transformedMsg.contactId = ghlContact.id;
-      transformedMsg.locationId = instance.userId;
-      await this.postInboundMessageToGhl(instance.userId, transformedMsg);
-    }
+    this.logger.log(
+      `Processing webhook for instance: ${instanceName}, Event: ${webhook.event}`,
+    );
 
-    if (webhook.event === 'connection.state') {
-      const state = (webhook.data as any).state;
+    // ✅ CORRECCIÓN N.º 1: Usar el nombre del evento correcto: 'connection.update'
+    if (webhook.event === 'connection.update' && webhook.data?.state) {
+      const state = webhook.data.state;
       let mappedStatus: InstanceState;
 
       switch (state) {
@@ -226,18 +215,46 @@ export class EvolutionApiService extends BaseAdapter<
           this.logger.warn(`Unknown connection state received: ${state}`);
           return;
       }
-      await this.prisma.updateInstanceState(instance.idInstance, mappedStatus);
-      this.logger.log(`Instance ${instance.idInstance} state updated to ${mappedStatus} via webhook.`);
+      
+      // ✅ CORRECCIÓN N.º 2: Actualizar la instancia por su NOMBRE, no por su ID.
+      const updated = await this.prisma.updateInstanceStateByName(instanceName, mappedStatus);
+      if (updated.count > 0) {
+        this.logger.log(`Instance ${instanceName} state updated to ${mappedStatus} via webhook.`);
+      } else {
+        this.logger.warn(`Webhook for unknown instance ${instanceName}. Could not update state.`);
+      }
+    }
+
+    if (webhook.event === 'messages.upsert' && webhook.data?.key?.remoteJid) {
+      // ✅ CORRECCIÓN N.º 2: Buscar la instancia por su NOMBRE.
+      const instance = await this.prisma.findInstanceByNameOnly(instanceName);
+      if (!instance) {
+        this.logger.warn(`Webhook for unknown instance ${instanceName}. Ignoring message.`);
+        return;
+      }
+
+      const { data } = webhook;
+      const senderPhone = data.key.remoteJid.split('@')[0];
+      const senderName = data.pushName || `WhatsApp User ${senderPhone.slice(-4)}`;
+      const ghlContact = await this.findOrCreateGhlContact(
+        instance.userId,
+        senderPhone,
+        senderName,
+        instance.idInstance,
+      );
+      const transformedMsg = this.transformer.toPlatformMessage(webhook);
+      transformedMsg.contactId = ghlContact.id;
+      transformedMsg.locationId = instance.userId;
+      await this.postInboundMessageToGhl(instance.userId, transformedMsg);
     }
   }
 
   public async createEvolutionApiInstanceForUser(
     userId: string,
-    instanceId: string,   // GUID que introduce el cliente
-    token: string,        // Token de INSTANCIA que introduce el cliente
-    instanceName: string, // Nombre de la instancia que introduce el cliente
+    instanceId: string,
+    token: string,
+    instanceName: string,
   ): Promise<Instance> {
-    // 1. Validaciones internas en la base de datos de WLink para evitar duplicados.
     const existing = await this.prisma.getInstanceByNameAndToken(
       instanceName,
       token,
@@ -250,7 +267,6 @@ export class EvolutionApiService extends BaseAdapter<
     }
 
     try {
-      // 2. Validar credenciales utilizando nombre de instancia
       const isValid = await this.evolutionService.validateInstanceCredentials(
         token,
         instanceName,
@@ -263,7 +279,8 @@ export class EvolutionApiService extends BaseAdapter<
         token,
         instanceName,
       );
-      const state = statusInfo?.state || statusInfo?.status;
+      
+      const state = statusInfo?.instance?.state || 'close';
       const mappedState: InstanceState =
         state === 'open'
           ? 'authorized'
@@ -271,7 +288,6 @@ export class EvolutionApiService extends BaseAdapter<
           ? 'starting'
           : 'notAuthorized';
 
-      // 3. Guardar en base de datos local si la validación fue exitosa
       const newInstance = await this.prisma.createInstance({
         idInstance: parseId(instanceName),
         instanceGuid: instanceId,
@@ -314,3 +330,4 @@ export class EvolutionApiService extends BaseAdapter<
     );
   }
 }
+

@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+generator json {
+  provider = "prisma-json-types-generator"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id             String     @id
+  companyId      String?
+  accessToken    String     @db.Text
+  refreshToken   String     @db.Text
+  tokenExpiresAt DateTime?
+  instances      Instance[]
+  createdAt      DateTime   @default(now())
+}
+
+enum InstanceState {
+  notAuthorized
+  qr_code
+  authorized
+  yellowCard
+  blocked
+  starting
+}
+
+model Instance {
+  id               BigInt         @id @default(autoincrement())
+
+  /// Alias legible y único (ej. 'correoejemplo@gmail.com', 'nombreDeEjemplo', etc.)
+  idInstance       String         @unique @db.Text
+
+  /// GUID único generado por Evolution API
+  instanceGuid     String?        @unique @db.Text
+
+  /// Nombre opcional adicional
+  name             String?
+
+  apiTokenInstance String         @db.Text
+
+  /// Estado de conexión (mapeado de "stateInstance")
+  state            InstanceState? @map("stateInstance")
+
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  settings         Json?          @default("{}") @db.Json
+  createdAt        DateTime       @default(now())
+
+  @@index([userId])
+}

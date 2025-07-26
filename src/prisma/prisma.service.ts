@@ -89,6 +89,23 @@ export class PrismaService
     return { ...(data as any), user } as any;
   }
 
+  // ✅ CORRECCIÓN: Añadir el método que faltaba para buscar por el ID numérico (BigInt).
+  async getInstanceById(id: bigint): Promise<(Instance & { user: User }) | null> {
+    if (this.client) {
+      return this.client.instance.findUnique({
+        where: { id },
+        include: { user: true },
+      });
+    }
+    for (const inst of this.memory!.instances.values()) {
+      if (inst.id === id) {
+        const user = this.memory!.users.get(inst.userId);
+        return { ...inst, user } as any;
+      }
+    }
+    return null;
+  }
+
   async getInstance(idInstance: string): Promise<(Instance & { user: User }) | null> {
     if (this.client)
       return this.client.instance.findUnique({
@@ -153,13 +170,6 @@ export class PrismaService
     return inst;
   }
   
-  // ✅ --- CORRECCIÓN: MÉTODO AÑADIDO ---
-  /**
-   * Actualiza el estado de una o más instancias buscándolas por su nombre único.
-   * @param instanceName - El nombre de la instancia (ej: 'YC2').
-   * @param state - El nuevo estado (ej: 'authorized').
-   * @returns El número de registros actualizados.
-   */
   async updateInstanceStateByName(instanceName: string, state: InstanceState): Promise<{ count: number }> {
     if (this.client) {
       this.logger.log(`Updating state for instance(s) with name '${instanceName}' to '${state}'`);
@@ -168,7 +178,6 @@ export class PrismaService
         data: { state },
       });
     }
-    // Fallback para la base de datos en memoria
     let count = 0;
     for (const [key, inst] of this.memory!.instances.entries()) {
       if (inst.name === instanceName) {

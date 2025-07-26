@@ -63,12 +63,11 @@ export class EvolutionApiController {
       success: true,
       instances: refreshed.map((instance) => ({
         // ✅ --- CORRECCIÓN APLICADA AQUÍ ---
-        // Se devuelve el 'id' numérico (BigInt) que el frontend necesita para
-        // llamar a /api/qr/:id. Antes devolvía 'instance.idInstance'.
-        id: instance.id,
-        // --- FIN DE LA CORRECCIÓN ---
+        id: instance.id, // ID numérico para las funciones internas (delete, connect, etc.).
         name: instance.name,
         state: instance.state,
+        guid: instance.instanceGuid, // GUID para mostrar en el panel.
+        // --- FIN DE LA CORRECCIÓN ---
       })),
     };
   }
@@ -207,6 +206,5 @@ export class EvolutionApiController {
     }
   }
 }
-
 
 

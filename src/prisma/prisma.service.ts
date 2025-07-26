@@ -89,7 +89,6 @@ export class PrismaService
     return { ...(data as any), user } as any;
   }
 
-  // ✅ CORRECCIÓN: Añadir el método que faltaba para buscar por el ID numérico (BigInt).
   async getInstanceById(id: bigint): Promise<(Instance & { user: User }) | null> {
     if (this.client) {
       return this.client.instance.findUnique({
@@ -129,6 +128,25 @@ export class PrismaService
     }
     return list as any;
   }
+
+  /**
+   * ✅ --- CORRECCIÓN APLICADA AQUÍ ---
+   * Se añade el nuevo método para borrar la instancia usando su ID numérico (BigInt).
+   * Esto es necesario para que el método deleteInstance del controlador funcione.
+   */
+  async removeInstanceById(id: bigint): Promise<Instance & { user: User }> {
+    if (this.client) {
+      return this.client.instance.delete({
+        where: { id },
+        include: { user: true },
+      });
+    }
+    const inst = await this.getInstanceById(id);
+    if (!inst) throw new Error(`Instance with ID ${id} not found.`);
+    this.memory!.instances.delete(parseId(inst.idInstance));
+    return inst;
+  }
+  // --- FIN DE LA CORRECCIÓN ---
 
   async removeInstance(idInstance: string): Promise<Instance & { user: User }> {
     if (this.client)

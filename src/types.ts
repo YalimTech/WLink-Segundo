@@ -1,44 +1,88 @@
 // src/types.ts
 
 import { Request } from 'express';
-// Importa los tipos directamente desde el cliente de Prisma generado
-// Los tipos de Prisma pueden no estar disponibles si no se ha generado el cliente.
-// Para evitar errores de compilación en entornos sin acceso a los binarios de
-// Prisma, se definen tipos básicos compatibles.
+
+// =================================================================
+// TIPOS CENTRALES (Reflejan el schema.prisma)
+// =================================================================
+
+/**
+ * Define los estados posibles de una instancia.
+ * ✅ CORRECCIÓN: Coincide exactamente con el enum en `prisma/schema.prisma`.
+ */
 export type InstanceState =
   | 'notAuthorized'
-  | 'not_authorized'
   | 'qr_code'
   | 'authorized'
   | 'yellowCard'
   | 'blocked'
   | 'starting';
 
-export type User = any;
-export type Instance = any;
+/**
+ * ✅ MEJORA: Interfaz para el modelo User, reemplaza 'any'.
+ */
+export interface User {
+  id: string;
+  companyId?: string | null;
+  locationId?: string | null;
+  accessToken?: string | null;
+  refreshToken?: string | null;
+  tokenExpiresAt?: Date | null;
+  instances?: Instance[]; // Relación opcional
+  createdAt: Date;
+  updatedAt: Date;
+}
 
-// --- DTOs (Data Transfer Objects) para las peticiones HTTP ---
+/**
+ * ✅ MEJORA: Interfaz para el modelo Instance, reemplaza 'any'.
+ */
+export interface Instance {
+  id: bigint;
+  idInstance: string;
+  name: string;
+  apiTokenInstance: string;
+  instanceGuid: string;
+  state: InstanceState;
+  settings: any; // 'any' se mantiene si la estructura de settings es variable.
+  userId: string;
+  user?: User; // Relación opcional
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+// =================================================================
+// DTOs (Data Transfer Objects) para peticiones HTTP
+// =================================================================
+
 export interface CreateInstanceDto {
   locationId: string;
-  instanceId: string;   // <-- Este campo recibirá el GUID de la instancia.
-  token: string;        // <-- Este campo recibirá el API Token.
-  instanceName: string; // <-- Este campo recibirá el nombre legible (ej. "YC2").
+  instanceId: string;
+  token: string;
+  instanceName: string;
 }
+
 export interface UpdateInstanceDto {
   name: string;
 }
 
-// --- Tipos para la creación y actualización en Prisma ---
-// Usa los tipos generados por Prisma para mayor seguridad
-export type UserCreateData = any;
-export type UserUpdateData = any;
+// =================================================================
+// Tipos para creación y actualización en Prisma
+// =================================================================
 
-// --- Interfaces para Webhooks de Evolution API ---
+// ✅ MEJORA: Tipos más seguros para las operaciones de Prisma.
+export type UserCreateData = Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'instances'> & { id?: string };
+export type UserUpdateData = Partial<UserCreateData>;
+
+// =================================================================
+// Interfaces para Webhooks de Evolution API
+// =================================================================
+
 export interface MessageKey {
   remoteJid: string;
   fromMe: boolean;
   id: string;
 }
+
 export interface MessageData {
   key: MessageKey;
   pushName?: string;
@@ -46,16 +90,21 @@ export interface MessageData {
   messageTimestamp: number;
   [key: string]: any;
 }
+
 export interface EvolutionWebhook {
   event: string;
   instance: string;
-  data: MessageData;
-  sender: string;
-  type?: string;
-  timestamp?: number;
+  data: any; // Se mantiene 'any' porque la estructura de 'data' varía mucho según el evento.
+  sender?: string;
+  destination?: string;
+  timestamp?: string | number;
+  server_url?: string;
 }
 
-// --- Interfaces para GoHighLevel (GHL) ---
+// =================================================================
+// Interfaces para GoHighLevel (GHL)
+// =================================================================
+
 export interface AuthReq extends Request {
   locationId: string;
   userData?: GhlUserData;
@@ -74,10 +123,12 @@ export interface GhlPlatformAttachment {
   fileName?: string;
   type?: string;
 }
+
 export interface MessageStatusPayload {
   status?: 'delivered' | 'read' | 'failed' | 'pending' | 'sent';
   error?: any;
 }
+
 export interface GhlPlatformMessage {
   contactId?: string;
   locationId: string;
@@ -87,6 +138,7 @@ export interface GhlPlatformMessage {
   attachments?: GhlPlatformAttachment[];
   timestamp?: Date;
 }
+
 export interface GhlContactUpsertRequest {
   name?: string | null;
   locationId: string;
@@ -94,6 +146,7 @@ export interface GhlContactUpsertRequest {
   tags?: string[];
   source?: string;
 }
+
 export interface GhlContact {
   id: string;
   name: string;
@@ -101,7 +154,9 @@ export interface GhlContact {
   phone: string;
   tags: string[];
 }
+
 export interface GhlContactUpsertResponse {
   contact: GhlContact;
 }
+
 

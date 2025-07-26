@@ -1,4 +1,3 @@
-//src/webhooks/webhooks.controller.ts
 import {
   Controller,
   Post,
@@ -10,6 +9,7 @@ import {
   BadRequestException,
   Logger,
   UseGuards,
+  Param, // Importamos Param para ser explícitos si se usa en la URL
 } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { EvolutionApiService } from '../evolution-api/evolution-api.service';
@@ -26,9 +26,10 @@ export class WebhooksController {
     private readonly evolutionApiService: EvolutionApiService,
     private readonly configService: ConfigService,
     private readonly prisma: PrismaService,
+    // No necesitamos inyectar EvolutionApiTransformer aquí, ya que el servicio lo inyecta.
   ) {}
 
-  @Post('evolution')
+  @Post('evolution') // Si Evolution API envía el instanceId en la URL, se necesitaría @Param('instanceId') pathInstanceId: string, aquí.
   @HttpCode(HttpStatus.OK)
   @UseGuards(DynamicInstanceGuard)
   async handleEvolutionWebhook(
@@ -36,8 +37,9 @@ export class WebhooksController {
     @Res() res: Response,
   ): Promise<void> {
     this.logger.log(
-      `Received Evolution Webhook for instance: ${payload.instance}, Event: ${payload.event}`,
+      `Received Evolution Webhook for instance: ${payload.instance || 'N/A'}, Event: ${payload.event}`,
     );
+    // ✅ Importante: Envía la respuesta 200 OK inmediatamente para evitar reintentos del webhook.
     res.status(HttpStatus.OK).send('Webhook received');
 
     try {
@@ -46,40 +48,19 @@ export class WebhooksController {
         return;
       }
 
-      if (payload.event === 'connection.update' && payload.data?.state) {
-        this.logger.log(
-          `Handling connection update for ${payload.instance}. New state: ${payload.data.state}`,
-        );
-        
-        // ✅ CORRECCIÓN FINAL: Usar 'notAuthorized' que es el valor correcto de tu enum.
-        let appState: InstanceState = 'notAuthorized';
-        if (payload.data.state === 'open') {
-          appState = 'authorized';
-        }
-
-        const updated = await this.prisma.updateInstanceStateByName(
-          payload.instance,
-          appState,
-        );
-
-        if (updated.count > 0) {
-          this.logger.log(
-            `Instance ${payload.instance} state successfully updated to ${appState}.`,
-          );
-        } else {
-          this.logger.warn(
-            `Instance ${payload.instance} not found in database for state update.`,
-          );
-        }
-      }
-
+      // ✅ CORRECCIÓN PRINCIPAL: Delegar completamente el procesamiento del webhook al servicio.
+      // El servicio (EvolutionApiService) ya contiene la lógica de mapeo de estados completa
+      // y la actualización de la base de datos a través de EvolutionApiTransformer.
       await this.evolutionApiService.handleEvolutionWebhook(payload);
+
+      this.logger.log(`Evolution Webhook processed successfully for instance: ${payload.instance}`);
 
     } catch (error) {
       this.logger.error(
-        `Error processing Evolution webhook: ${error.message}`,
+        `Error processing Evolution webhook for instance ${payload.instance || 'N/A'}: ${error.message}`,
         error.stack,
       );
+      // No podemos enviar un status de error aquí porque ya enviamos 200 OK antes.
     }
   }
 
@@ -167,4 +148,3 @@ export class WebhooksController {
     return instanceTag ? instanceTag.replace('whatsapp-instance-', '') : null;
   }
 }
-

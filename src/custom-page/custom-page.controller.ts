@@ -263,12 +263,13 @@ export class CustomPageController {
                     <div className="space-y-4">
                       {instances.length === 0 && <p className="text-gray-500">No instances added.</p>}
                       
-                   {instances.map((inst) => (
-  <div key={inst.instanceId} className="flex justify-between items-center p-4 border rounded-xl">
+                  {instances.map((inst) => (
+  <div key={inst.id} className="flex justify-between items-center p-4 border rounded-xl">
     <div>
       <p className="font-semibold">{inst.name || 'Unnamed'}</p>
       <p className="text-sm text-gray-400">ID local: {inst.id}</p>
-      <p className="text-sm text-gray-500">GUID: {inst.instanceId}</p>
+      {/* CORRECCIÓN: Usar 'inst.guid' para mostrar el GUID de Evolution API */}
+      <p className="text-sm text-gray-500">GUID: {inst.guid}</p>
       <span
         className={
           "text-xs px-2 py-1 rounded-full " +

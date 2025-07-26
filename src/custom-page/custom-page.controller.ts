@@ -106,6 +106,7 @@ export class CustomPageController {
               const [qr, setQr] = useState('');
               const [showQr, setShowQr] = useState(false);
               const pollRef = useRef(null);
+              const mainIntervalRef = useRef(null);
 
               useEffect(() => {
                 const listener = (e) => {
@@ -119,9 +120,13 @@ export class CustomPageController {
               useEffect(() => {
                 if (locationId) {
                   loadInstances();
-                  const int = setInterval(loadInstances, 10000);
-                  return () => clearInterval(int);
+                  if (mainIntervalRef.current) clearInterval(mainIntervalRef.current);
+                  mainIntervalRef.current = setInterval(loadInstances, 10000);
                 }
+                return () => {
+                  if (mainIntervalRef.current) clearInterval(mainIntervalRef.current);
+                  if (pollRef.current) clearInterval(pollRef.current);
+                };
               }, [locationId]);
 
               async function makeApiRequest(url, options = {}) {
@@ -165,53 +170,78 @@ export class CustomPageController {
                 }
               }
 
+              // ✅ CORRECCIÓN: Función startPolling definida
+              function startPolling(instanceId) {
+                if (pollRef.current) clearInterval(pollRef.current);
+                
+                pollRef.current = setInterval(async () => {
+                  try {
+                    console.log('Polling for instance status...');
+                    const res = await makeApiRequest('/api/instances');
+                    const updatedInstance = res.instances.find(inst => inst.id === instanceId);
+                    
+                    if (updatedInstance && updatedInstance.state === 'authorized') {
+                      console.log('Instance authorized! Stopping poll.');
+                      clearInterval(pollRef.current);
+                      setShowQr(false);
+                      setInstances(res.instances);
+                    }
+                  } catch (error) {
+                    console.error('Polling failed:', error);
+                    clearInterval(pollRef.current);
+                  }
+                }, 3000); // Verifica cada 3 segundos
+              }
+
               async function connectInstance(id) {
-    setQr('');
-  setShowQr(true);
-  try {
-    const res = await makeApiRequest('/api/qr/' + id);
+                setQr('');
+                setShowQr(true);
+                if (pollRef.current) clearInterval(pollRef.current); // Detener sondeo anterior
 
-    if (res.type === 'qr') {
-      // Cuando el backend envía directamente un QR en base64
-      setQr('data:image/png;base64,' + res.data);
-    } else if (res.type === 'code') {
-      // Cuando el backend envía un código (string) que debemos convertir a imagen
-      const qrImage = await generateQrFromString(res.data);
-      setQr(qrImage);
-    } else {
-      throw new Error('Unexpected QR response format.');
-    }
+                try {
+                  const res = await makeApiRequest('/api/qr/' + id);
 
-    startPolling(id);
-  } catch (err) {
-    setQr('');
-    alert(err.message);
-  }
-}
+                  if (res.type === 'qr') {
+                    // ✅ CORRECCIÓN: Asegura que el data URI sea correcto
+                    const qrData = res.data.startsWith('data:image') ? res.data : 'data:image/png;base64,' + res.data;
+                    setQr(qrData);
+                  } else if (res.type === 'code') {
+                    const qrImage = await generateQrFromString(res.data);
+                    setQr(qrImage);
+                  } else {
+                    throw new Error('Unexpected QR response format.');
+                  }
+                  
+                  // Esta llamada ahora funcionará
+                  startPolling(id);
+
+                } catch (err) {
+                  setQr('');
+                  setShowQr(false);
+                  alert('Error getting QR: ' + err.message);
+                }
+              }
 
               async function generateQrFromString(text) {
-  return new Promise((resolve, reject) => {
-    if (!window.QRCode) return reject(new Error('QRCode library not loaded'));
-    const container = document.createElement('div');
-    new window.QRCode(container, {
-      text,
-      width: 256,
-      height: 256,
-      correctLevel: window.QRCode.CorrectLevel.H,
-    });
-    setTimeout(() => {
-      const img = container.querySelector('img') || container.querySelector('canvas');
-      if (img) {
-        // Para canvas, convertimos a dataURL
-        resolve(img.src || img.toDataURL('image/png'));
-      } else {
-        reject(new Error('Failed to generate QR image'));
-      }
-    }, 100);
-  });
-}
-
-
+                return new Promise((resolve, reject) => {
+                  if (!window.QRCode) return reject(new Error('QRCode library not loaded'));
+                  const container = document.createElement('div');
+                  new window.QRCode(container, {
+                    text,
+                    width: 256,
+                    height: 256,
+                    correctLevel: window.QRCode.CorrectLevel.H,
+                  });
+                  setTimeout(() => {
+                    const img = container.querySelector('img') || container.querySelector('canvas');
+                    if (img) {
+                      resolve(img.src || img.toDataURL('image/png'));
+                    } else {
+                      reject(new Error('Failed to generate QR image'));
+                    }
+                  }, 100);
+                });
+              }
 
               async function logoutInstance(id) {
                 if (!confirm('Logout instance?')) return;
@@ -237,7 +267,7 @@ export class CustomPageController {
                           <div>
                             <p className="font-semibold">{inst.name || 'Unnamed'}</p>
                             <p className="text-sm text-gray-500">{inst.id}</p>
-                            <span className="text-xs px-2 py-1 rounded-full bg-gray-200">
+                            <span className={"text-xs px-2 py-1 rounded-full " + (inst.state === 'authorized' ? 'bg-green-200 text-green-800' : 'bg-yellow-200 text-yellow-800')}>
                               {inst.state === 'qr_code' ? 'Awaiting Scan' : inst.state}
                             </span>
                           </div>
@@ -256,7 +286,6 @@ export class CustomPageController {
                   <div className="bg-white rounded-2xl shadow-md p-6 space-y-4">
                     <h2 className="text-xl font-semibold">Add New Instance</h2>
                     <form onSubmit={submit} className="grid gap-4">
-                      {/* Campo 1: Instance ID (GUID) - Obligatorio */}
                       <input 
                         required 
                         value={form.instanceId} 
@@ -264,8 +293,6 @@ export class CustomPageController {
                         placeholder="Instance ID (GUID)" 
                         className="border p-2 rounded-xl" 
                       />
-                      
-                      {/* Campo 2: API Token - Obligatorio */}
                       <input 
                         required 
                         value={form.token} 
@@ -273,8 +300,6 @@ export class CustomPageController {
                         placeholder="API Token" 
                         className="border p-2 rounded-xl" 
                       />
-                      
-                      {/* Campo 3: Instance Name - Obligatorio */}
                       <input 
                         required 
                         value={form.instanceName} 
@@ -282,15 +307,14 @@ export class CustomPageController {
                         placeholder="Instance Name (e.g., YC2)" 
                         className="border p-2 rounded-xl" 
                       />
-                      
                       <button className="px-4 py-2 rounded-xl bg-indigo-600 text-white">Add Instance</button>
                     </form>
                   </div>
                   {showQr && (
-                    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center">
-                      <div className="bg-white p-6 rounded-2xl shadow-md text-center space-y-4">
+                    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center" onClick={() => setShowQr(false)}>
+                      <div className="bg-white p-6 rounded-2xl shadow-md text-center space-y-4" onClick={(e) => e.stopPropagation()}>
                         {qr ? <img src={qr} className="mx-auto" /> : <p>Loading QR...</p>}
-                        <button onClick={() => setShowQr(false)} className="px-3 py-1 rounded-xl bg-gray-700 text-white">Close</button>
+                        <button onClick={() => { setShowQr(false); if (pollRef.current) clearInterval(pollRef.current); }} className="px-3 py-1 rounded-xl bg-gray-700 text-white">Close</button>
                       </div>
                     </div>
                   )}
@@ -304,4 +328,5 @@ export class CustomPageController {
     `;
   }
 }
+
 

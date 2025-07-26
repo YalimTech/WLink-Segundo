@@ -139,41 +139,43 @@ export class EvolutionService {
     }
   }
 
- async getQrCode(
-  instanceToken: string,
-  instanceName: string,
-  number?: string,
-): Promise<{ type: 'qr' | 'code'; data: string }> {
-  const encodedName = encodeURIComponent(instanceName);
-  let url = `${this.baseUrl}/instance/connect/${encodedName}`;
-  if (number) url += `?number=${encodeURIComponent(number)}`;
+  async getQrCode(
+    instanceToken: string,
+    instanceName: string,
+    number?: string,
+  ): Promise<{ type: 'qr' | 'code'; data: string }> {
+    const encodedName = encodeURIComponent(instanceName);
+    let url = `${this.baseUrl}/instance/connect/${encodedName}`;
+    if (number) url += `?number=${encodeURIComponent(number)}`;
 
-  try {
-    const response = await lastValueFrom(
-      this.http.get(url, this._getConfig(instanceToken)),
-    );
+    try {
+      const response = await lastValueFrom(
+        this.http.get(url, this._getConfig(instanceToken)),
+      );
 
-    const data = response.data || {};
-    this.logger.debug(`QR response for ${instanceName}: ${JSON.stringify(data)}`);
+      const data = response.data || {};
+      this.logger.debug(`QR response for ${instanceName}: ${JSON.stringify(data)}`);
 
-    const qr = data.base64 || data.qr || data.qrCode;
-    if (qr) return { type: 'qr', data: qr };
+      // Prioriza el QR en base64 si está disponible
+      const qr = data.base64 || data.qr || data.qrCode;
+      if (qr) return { type: 'qr', data: qr };
 
-    const code = data.pairingCode || data.code;
-    if (code) return { type: 'code', data: code };
+      // ✅ CORRECCIÓN: Accede a la propiedad 'code' dentro del objeto 'pairingCode'.
+      const code = data.pairingCode?.code || data.code;
+      if (code) return { type: 'code', data: code };
 
-    throw new Error('QR code or pairing code not found in response');
-  } catch (error) {
-    this.logger.error(
-      `Error fetching QR code for instance ${instanceName}: ${error.message}`,
-      error.stack
-    );
-    throw new HttpException(
-      'Failed to fetch QR code from Evolution API.',
-      HttpStatus.INTERNAL_SERVER_ERROR,
-    );
+      throw new Error('QR code or pairing code not found in response');
+    } catch (error) {
+      this.logger.error(
+        `Error fetching QR code for instance ${instanceName}: ${error.message}`,
+        error.stack
+      );
+      throw new HttpException(
+        'Failed to fetch QR code from Evolution API.',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
   }
-}
 
 
   async logoutInstance(instanceToken: string, instanceName: string) {

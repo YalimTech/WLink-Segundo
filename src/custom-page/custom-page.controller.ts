@@ -172,8 +172,9 @@ export class CustomPageController {
                 }
               }
 
+              // ✅ CORRECCIÓN: Lógica de startPolling mejorada para cerrar el QR y actualizar estados
               function startPolling(instanceId) {
-                if (pollRef.current) clearInterval(pollRef.current);
+                if (pollRef.current) clearInterval(pollRef.current); // Limpiar cualquier sondeo previo
                 
                 pollRef.current = setInterval(async () => {
                   try {
@@ -182,41 +183,43 @@ export class CustomPageController {
                     const updatedInstance = res.instances.find(inst => inst.id === instanceId);
                     
                     if (updatedInstance) {
-                      // Actualiza la lista de instancias para reflejar el estado más reciente
+                      // Siempre actualiza la lista de instancias para reflejar el estado más reciente
                       setInstances(res.instances); 
                       
-                      // NUEVA LÓGICA: Si el estado cambia y no es 'qr_code' o 'starting', cerrar el modal QR.
-                      // Esto maneja cuando el QR expira, se escanea, o la conexión falla mientras el modal está abierto.
+                      // Lógica MEJORADA para cerrar el modal QR:
+                      // Cierra el QR si el estado NO es 'qr_code' Y NO es 'starting'.
+                      // Esto cubre 'authorized', 'notAuthorized', 'yellowCard', 'blocked'.
                       if (showQr && updatedInstance.state !== 'qr_code' && updatedInstance.state !== 'starting') {
-                        console.log(`Instance state for ${updatedInstance.name} changed to ${updatedInstance.state}. Closing QR modal.`);
+                        console.log(`Estado de la instancia ${updatedInstance.name} cambió a ${updatedInstance.state}. Cerrando modal QR.`);
                         clearInterval(pollRef.current);
                         setShowQr(false);
                         setQr(''); // Limpiar el QR para asegurar que no se muestre un QR viejo
                       }
 
-                      // Si está autorizado, detener el sondeo y cerrar QR si está abierto
+                      // Si está autorizado, detener el sondeo completamente (ya cubierto por la lógica anterior, pero explícito)
                       if (updatedInstance.state === 'authorized') {
-                        console.log('Instance authorized! Stopping poll.');
+                        console.log('¡Instancia autorizada! Deteniendo sondeo.');
                         clearInterval(pollRef.current);
-                        setShowQr(false);
+                        setShowQr(false); // Asegurarse de que el modal QR esté cerrado
                         setQr(''); // Limpiar el QR
                       }
                     }
                   } catch (error) {
-                    console.error('Polling failed:', error);
-                    clearInterval(pollRef.current);
-                    setShowQr(false); // Cierra el QR si el sondeo falla completamente
+                    console.error('Error durante el sondeo:', error);
+                    clearInterval(pollRef.current); // Detener el sondeo si hay un error
+                    setShowQr(false); // Cerrar el modal QR si el sondeo falla
                     setQr(''); // Limpiar el QR
                   }
                 }, 3000); // Verifica cada 3 segundos
               }
 
               async function connectInstance(id) {
-                setQr('');
-                setShowQr(true); // Mostrar el modal del QR
+                setQr(''); // Limpiar cualquier QR previo
+                setShowQr(true); // Mostrar el modal del QR inmediatamente
                 if (pollRef.current) clearInterval(pollRef.current); // Detener sondeo anterior si lo hay
 
                 try {
+                  // La petición para obtener el QR / iniciar conexión
                   const res = await makeApiRequest('/api/qr/' + id);
 
                   if (res.type === 'qr') {
@@ -235,7 +238,7 @@ export class CustomPageController {
                 } catch (err) {
                   setQr('');
                   setShowQr(false); // Asegurarse de que el modal se cierre si la petición de QR falla.
-                  alert('Error getting QR: ' + err.message);
+                  alert('Error obteniendo QR: ' + err.message);
                 }
               }
 
@@ -261,15 +264,15 @@ export class CustomPageController {
               }
 
               async function logoutInstance(id) {
-                if (!confirm('Logout instance?')) return;
+                if (!confirm('¿Desconectar instancia?')) return; // Mensaje más amigable
                 await makeApiRequest('/api/instances/' + id + '/logout', { method: 'DELETE' });
-                await loadInstances();
+                await loadInstances(); // Recargar instancias para reflejar el cambio de estado
               }
 
               async function deleteInstance(id) {
-                if (!confirm('Delete instance?')) return;
+                if (!confirm('¿Eliminar instancia permanentemente?')) return; // Mensaje más amigable
                 await makeApiRequest('/api/instances/' + id, { method: 'DELETE' });
-                await loadInstances();
+                await loadInstances(); // Recargar instancias para reflejar la eliminación
               }
 
               return (
@@ -301,11 +304,13 @@ export class CustomPageController {
                                   : 'bg-gray-200 text-gray-800') // Para cualquier otro estado no mapeado
                               }
                             >
-                              {/* CORRECCIÓN: Ajustar la lógica para los estados de visualización */}
-                              {inst.state === 'authorized'
-                                ? 'Connected'
-                                : inst.state === 'qr_code'
+                              {/* CORRECCIÓN PRINCIPAL DE ESTADOS: Lógica de visualización más precisa */}
+                              {showQr && qr // Si el modal QR está abierto y hay un QR
                                 ? 'Awaiting Scan'
+                                : inst.state === 'authorized'
+                                ? 'Connected'
+                                : inst.state === 'qr_code' // Si el modal QR NO está abierto pero el backend reporta qr_code (esto debería ser raro ahora)
+                                ? 'Awaiting Scan (Background)' // Podría indicar un QR no visible o expirado
                                 : inst.state === 'starting'
                                 ? 'Connecting...'
                                 : inst.state === 'notAuthorized'
@@ -316,7 +321,7 @@ export class CustomPageController {
                             </span>
                           </div>
                           <div className="flex gap-2">
-                            {inst.state === 'authorized' || inst.state === 'connected' ? ( // 'connected' también si existe ese estado en el frontend
+                            {inst.state === 'authorized' ? ( // Solo 'authorized' debe poder desconectarse (hacer logout)
                               <button
                                 onClick={() => logoutInstance(inst.id)}
                                 className="px-3 py-1 rounded-xl bg-yellow-500 text-white"
@@ -345,7 +350,7 @@ export class CustomPageController {
                   <div className="bg-white rounded-2xl shadow-md p-6 space-y-4">
                     <h2 className="text-xl font-semibold">Add New Instance</h2>
                     <form onSubmit={submit} className="grid gap-4">
-                      {/* CORRECCIÓN IMPORTANTE: MANTENEMOS EL CAMPO 'Instance ID (GUID)' ya que es requerido por el backend para la validación */}
+                      {/* MANTENEMOS EL CAMPO 'Instance ID (GUID)' ya que es requerido por el backend para la validación */}
                       <input
                         required
                         value={form.instanceId}

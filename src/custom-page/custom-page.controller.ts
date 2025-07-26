@@ -264,7 +264,7 @@ export class CustomPageController {
                       {instances.length === 0 && <p className="text-gray-500">No instances added.</p>}
                       
                    {instances.map((inst) => (
-  <div key={inst.instanceId} className="flex justify-between items-center p-4 border rounded-xl">
+  <div key={inst.instanceName} className="flex justify-between items-center p-4 border rounded-xl">
     <div>
       <p className="font-semibold">{inst.name || 'Unnamed'}</p>
       <p className="text-sm text-gray-400">ID local: {inst.id}</p>

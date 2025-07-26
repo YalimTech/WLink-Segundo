@@ -262,8 +262,8 @@ export class CustomPageController {
                     <h2 className="text-xl font-semibold">Your Instances</h2>
                     <div className="space-y-4">
                       {instances.length === 0 && <p className="text-gray-500">No instances added.</p>}
-                      {instances.map((inst) => (
-  <div key={inst.instanceId} className="flex justify-between items-center p-4 border rounded-xl">
+                    {instances.map((inst) => (
+  <div key={inst.instanceName} className="flex justify-between items-center p-4 border rounded-xl">
     <div>
       <p className="font-semibold">{inst.name || 'Unnamed'}</p>
       <p className="text-sm text-gray-500">{inst.instanceId}</p>
@@ -273,11 +273,11 @@ export class CustomPageController {
     </div>
     <div className="flex gap-2">
       {inst.state === 'authorized' ? (
-        <button onClick={() => logoutInstance(inst.id)} className="px-3 py-1 rounded-xl bg-yellow-500 text-white">Logout</button>
+        <button onClick={() => logoutInstance(inst.instanceName)} className="px-3 py-1 rounded-xl bg-yellow-500 text-white">Logout</button>
       ) : (
-        <button onClick={() => connectInstance(inst.id)} className="px-3 py-1 rounded-xl bg-green-600 text-white">Connect</button>
+        <button onClick={() => connectInstance(inst.instanceName)} className="px-3 py-1 rounded-xl bg-green-600 text-white">Connect</button>
       )}
-      <button onClick={() => deleteInstance(inst.id)} className="px-3 py-1 rounded-xl bg-red-600 text-white">Delete</button>
+      <button onClick={() => deleteInstance(inst.instanceName)} className="px-3 py-1 rounded-xl bg-red-600 text-white">Delete</button>
     </div>
   </div>
 ))}

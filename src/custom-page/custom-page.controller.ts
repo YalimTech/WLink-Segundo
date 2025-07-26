@@ -262,6 +262,8 @@ export class CustomPageController {
                     <h2 className="text-xl font-semibold">Your Instances</h2>
                     <div className="space-y-4">
                       {instances.length === 0 && <p className="text-gray-500">No instances added.</p>}
+
+                      
                       
                   {instances.map((inst) => (
   <div key={inst.id} className="flex justify-between items-center p-4 border rounded-xl">

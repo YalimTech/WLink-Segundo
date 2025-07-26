@@ -1,3 +1,4 @@
+//custom-page/custom-page.controller.ts
 import {
   Controller,
   Get,
@@ -101,8 +102,8 @@ export class CustomPageController {
               const [locationId, setLocationId] = useState(null);
               const [encrypted, setEncrypted] = useState(null);
               const [instances, setInstances] = useState([]);
-              // Eliminamos 'instanceId' del estado del formulario ya que ya no es una entrada directa del usuario para el GUID.
-              const [form, setForm] = useState({ token: '', instanceName: '' });
+              // CORRECCIÓN IMPORTANTE: Mantenemos 'instanceId' en el estado del formulario porque es una entrada requerida por el backend.
+              const [form, setForm] = useState({ instanceId: '', token: '', instanceName: '' });
               const [qr, setQr] = useState('');
               const [showQr, setShowQr] = useState(false);
               const pollRef = useRef(null);
@@ -162,17 +163,9 @@ export class CustomPageController {
               async function submit(e) {
                 e.preventDefault();
                 try {
-                  // Se envía solo locationId, token y instanceName.
-                  // El GUID real será obtenido por el backend de Evolution API.
-                  await makeApiRequest('/api/instances', {
-                    method: 'POST',
-                    body: JSON.stringify({
-                      locationId,
-                      token: form.token,
-                      instanceName: form.instanceName
-                    })
-                  });
-                  setForm({ token: '', instanceName: '' }); // Limpiar el formulario
+                  // Mantenemos 'instanceId' en el payload porque el backend lo espera para la validación y para almacenar el GUID.
+                  await makeApiRequest('/api/instances', { method: 'POST', body: JSON.stringify({ locationId, ...form }) });
+                  setForm({ instanceId: '', token: '', instanceName: '' }); // Limpiar el formulario
                   await loadInstances();
                 } catch (err) {
                   alert(err.message);
@@ -279,13 +272,15 @@ export class CustomPageController {
                             <span
                               className={
                                 "text-xs px-2 py-1 rounded-full " +
-                                (inst.state === 'authorized' // Estado autorizado
-                                  ? 'bg-green-200 text-green-800'
-                                  : inst.state === 'qr_code' || inst.state === 'starting' || inst.state === 'notAuthorized'
-                                  ? 'bg-yellow-200 text-yellow-800' // Estados de espera o inicio
+                                (inst.state === 'authorized'
+                                  ? 'bg-green-200 text-green-800' // Conectado y autorizado
+                                  : inst.state === 'qr_code' || inst.state === 'starting'
+                                  ? 'bg-yellow-200 text-yellow-800' // Esperando acción (QR) o iniciando
+                                  : inst.state === 'notAuthorized'
+                                  ? 'bg-red-200 text-red-800' // Desconectado (rojo para mayor visibilidad)
                                   : inst.state === 'yellowCard' || inst.state === 'blocked'
-                                  ? 'bg-red-222 text-red-800' // Estados de error o bloqueado
-                                  : 'bg-gray-200 text-gray-800') // Para cualquier otro estado no mapeado
+                                  ? 'bg-red-500 text-white' // Estados de error o bloqueado (más oscuro)
+                                  : 'bg-gray-200 text-gray-800') // Para cualquier otro estado desconocido/neutro
                               }
                             >
                               {/* CORRECCIÓN: Ajustar la lógica para los estados de visualización */}
@@ -303,7 +298,7 @@ export class CustomPageController {
                             </span>
                           </div>
                           <div className="flex gap-2">
-                            {inst.state === 'authorized' || inst.state === 'connected' ? (
+                            {inst.state === 'authorized' || inst.state === 'connected' ? ( // 'connected' también si existe ese estado en el frontend
                               <button
                                 onClick={() => logoutInstance(inst.id)}
                                 className="px-3 py-1 rounded-xl bg-yellow-500 text-white"
@@ -332,14 +327,14 @@ export class CustomPageController {
                   <div className="bg-white rounded-2xl shadow-md p-6 space-y-4">
                     <h2 className="text-xl font-semibold">Add New Instance</h2>
                     <form onSubmit={submit} className="grid gap-4">
-                      {/* ELIMINAMOS EL CAMPO 'Instance ID (GUID)' ya que el GUID lo genera Evolution API */}
-                      {/* <input
+                      {/* CORRECCIÓN IMPORTANTE: MANTENEMOS EL CAMPO 'Instance ID (GUID)' ya que es requerido por el backend para la validación */}
+                      <input
                         required
                         value={form.instanceId}
                         onChange={(e) => setForm({ ...form, instanceId: e.target.value })}
                         placeholder="Instance ID (GUID)"
                         className="border p-2 rounded-xl"
-                      /> */}
+                      />
                       <input
                         required
                         value={form.token}
@@ -375,4 +370,3 @@ export class CustomPageController {
     `;
   }
 }
-

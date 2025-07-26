@@ -115,7 +115,7 @@ export class CustomPageController {
                 };
                 window.addEventListener('message', listener);
                 window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
-                return () => window.removeEventListener('message', listener);
+                return () => window.removeEventListener('messaage', listener);
               }, []);
 
               useEffect(() => {
@@ -188,8 +188,8 @@ export class CustomPageController {
                       
                       // Lógica MEJORADA para cerrar el modal QR:
                       // Cierra el QR si el estado NO es 'qr_code' Y NO es 'starting'.
+                      // Esto cubre 'authorized', 'notAuthorized', 'yellowCard', 'blocked'.
                       if (showQr && updatedInstance.state !== 'qr_code' && updatedInstance.state !== 'starting') {
-                        // console.log(`Estado de la instancia ${updatedInstance.name} cambió a ${updatedInstance.state}. Cerrando modal QR.`); // Eliminado por error de compilación
                         clearInterval(pollRef.current);
                         setShowQr(false);
                         setQr(''); // Limpiar el QR para asegurar que no se muestre un QR viejo
@@ -197,7 +197,6 @@ export class CustomPageController {
 
                       // Si está autorizado, detener el sondeo completamente
                       if (updatedInstance.state === 'authorized') {
-                        // console.log('¡Instancia autorizada! Deteniendo sondeo.'); // Eliminado por error de compilación
                         clearInterval(pollRef.current);
                         setShowQr(false); // Asegurarse de que el modal QR esté cerrado
                         setQr(''); // Limpiar el QR

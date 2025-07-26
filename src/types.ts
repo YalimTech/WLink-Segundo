@@ -6,10 +6,6 @@ import { Request } from 'express';
 // TIPOS CENTRALES (Reflejan el schema.prisma)
 // =================================================================
 
-/**
- * Define los estados posibles de una instancia.
- * ✅ CORRECCIÓN: Coincide exactamente con el enum en `prisma/schema.prisma`.
- */
 export type InstanceState =
   | 'notAuthorized'
   | 'qr_code'
@@ -18,9 +14,6 @@ export type InstanceState =
   | 'blocked'
   | 'starting';
 
-/**
- * ✅ MEJORA: Interfaz para el modelo User, reemplaza 'any'.
- */
 export interface User {
   id: string;
   companyId?: string | null;
@@ -28,14 +21,11 @@ export interface User {
   accessToken?: string | null;
   refreshToken?: string | null;
   tokenExpiresAt?: Date | null;
-  instances?: Instance[]; // Relación opcional
+  instances?: Instance[];
   createdAt: Date;
   updatedAt: Date;
 }
 
-/**
- * ✅ MEJORA: Interfaz para el modelo Instance, reemplaza 'any'.
- */
 export interface Instance {
   id: bigint;
   idInstance: string;
@@ -43,9 +33,9 @@ export interface Instance {
   apiTokenInstance: string;
   instanceGuid: string;
   state: InstanceState;
-  settings: any; // 'any' se mantiene si la estructura de settings es variable.
+  settings: any;
   userId: string;
-  user?: User; // Relación opcional
+  user?: User;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -69,7 +59,6 @@ export interface UpdateInstanceDto {
 // Tipos para creación y actualización en Prisma
 // =================================================================
 
-// ✅ MEJORA: Tipos más seguros para las operaciones de Prisma.
 export type UserCreateData = Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'instances'> & { id?: string };
 export type UserUpdateData = Partial<UserCreateData>;
 
@@ -94,9 +83,10 @@ export interface MessageData {
 export interface EvolutionWebhook {
   event: string;
   instance: string;
-  data: any; // Se mantiene 'any' porque la estructura de 'data' varía mucho según el evento.
+  data: any;
   sender?: string;
   destination?: string;
+  // ✅ CORRECCIÓN: Permitir que el timestamp sea string o number para mayor flexibilidad.
   timestamp?: string | number;
   server_url?: string;
 }

@@ -263,16 +263,12 @@ export class CustomPageController {
                     <div className="space-y-4">
                       {instances.length === 0 && <p className="text-gray-500">No instances added.</p>}
                       
-                     {instances.map((inst) => (
-  <div
-    key={inst.instanceId || inst.id}
-    className="flex justify-between items-center p-4 border rounded-xl"
-  >
+                    {instances.map((inst) => (
+  <div key={inst.Id} className="flex justify-between items-center p-4 border rounded-xl">
     <div>
-      <p className="font-semibold">{inst.name || 'Unnamed Instance'}</p>
+      <p className="font-semibold">{inst.name || 'Unnamed'}</p>
       <p className="text-sm text-gray-400">ID local: {inst.id}</p>
       <p className="text-sm text-gray-500">GUID: {inst.instanceId}</p>
-      <p className="text-sm text-gray-500">Alias (instanceName): {inst.name}</p>
       <span
         className={
           "text-xs px-2 py-1 rounded-full " +
@@ -285,28 +281,27 @@ export class CustomPageController {
           ? 'Connected'
           : inst.state === 'qr_code' || inst.state === 'open' || inst.state === 'notAuthorized'
           ? 'Awaiting Scan'
-          : inst.state || 'Unknown'}
+          : inst.state}
       </span>
     </div>
-
     <div className="flex gap-2">
-      {(inst.state === 'authorized' || inst.state === 'connected') ? (
+      {inst.state === 'authorized' || inst.state === 'connected' ? (
         <button
-          onClick={() => logoutInstance(inst.name)} // <-- Usar el alias (instanceName)
+          onClick={() => logoutInstance(inst.id)}
           className="px-3 py-1 rounded-xl bg-yellow-500 text-white"
         >
           Logout
         </button>
       ) : (
         <button
-          onClick={() => connectInstance(inst.name)} // <-- Usar el alias (instanceName)
+          onClick={() => connectInstance(inst.id)}
           className="px-3 py-1 rounded-xl bg-green-600 text-white"
         >
           Connect
         </button>
       )}
       <button
-        onClick={() => deleteInstance(inst.id)} // <-- ID local de tu base de datos
+        onClick={() => deleteInstance(inst.id)}
         className="px-3 py-1 rounded-xl bg-red-600 text-white"
       >
         Delete

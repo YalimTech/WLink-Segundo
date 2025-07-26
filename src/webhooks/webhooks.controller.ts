@@ -16,7 +16,6 @@ import { EvolutionApiService } from '../evolution-api/evolution-api.service';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GhlWebhookDto } from '../evolution-api/dto/ghl-webhook.dto';
-// ✅ CORRECCIÓN: Importar InstanceState para usar el tipo explícitamente.
 import { EvolutionWebhook, InstanceState } from '../types';
 import { DynamicInstanceGuard } from './guards/dynamic-instance.guard';
 
@@ -52,9 +51,11 @@ export class WebhooksController {
           `Handling connection update for ${payload.instance}. New state: ${payload.data.state}`,
         );
 
-        // ✅ CORRECCIÓN: Definir explícitamente el tipo de la variable appState.
-        const appState: InstanceState =
-          payload.data.state === 'open' ? 'authorized' : 'unauthorized';
+        // ✅ CORRECCIÓN DEFINITIVA: Reescribir la lógica para evitar el error de tipado.
+        let appState: InstanceState = 'unauthorized'; // Valor por defecto
+        if (payload.data.state === 'open') {
+          appState = 'authorized';
+        }
 
         const updated = await this.prisma.updateInstanceStateByName(
           payload.instance,

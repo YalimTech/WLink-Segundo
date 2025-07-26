@@ -1,5 +1,4 @@
 // src/evolution-api/evolution-api.transformer.ts
-
 import { Injectable, Logger } from '@nestjs/common';
 import { MessageTransformer } from '../core/base-adapter';
 import { GhlPlatformMessage, EvolutionWebhook } from '../types';
@@ -20,7 +19,9 @@ export class EvolutionApiTransformer implements MessageTransformer<GhlPlatformMe
     const platformMessage: Partial<GhlPlatformMessage> = {
       direction: 'inbound',
       message: messageText.trim(),
-      timestamp: webhook.timestamp ? new Date(webhook.timestamp * 1000) : new Date(),
+      // ✅ CORRECCIÓN: Convertir explícitamente el timestamp a número antes de multiplicar.
+      // Esto satisface a TypeScript y previene errores si el timestamp llega como un string.
+      timestamp: webhook.timestamp ? new Date(Number(webhook.timestamp) * 1000) : new Date(),
     };
 
     return platformMessage as GhlPlatformMessage;

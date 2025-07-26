@@ -47,21 +47,19 @@ export class WebhooksController {
         return;
       }
 
-      // ✅ CORRECCIÓN: Añadir la lógica para manejar la actualización del estado de la conexión.
+      // ✅ CORRECCIÓN: Lógica para manejar la actualización del estado de la conexión.
       if (payload.event === 'connection.update' && payload.data?.state) {
         this.logger.log(
           `Handling connection update for ${payload.instance}. New state: ${payload.data.state}`,
         );
 
-        // Mapear el estado de Evolution ('open') al estado de la aplicación ('authorized').
-        // Otros estados como 'close' o 'connecting' se pueden mapear a 'unauthorized'.
         const appState = payload.data.state === 'open' ? 'authorized' : 'unauthorized';
 
-        // Actualizar el estado en la base de datos para la instancia correspondiente.
-        const updated = await this.prisma.instance.updateMany({
-          where: { name: payload.instance },
-          data: { state: appState },
-        });
+        // ✅ CORRECCIÓN: Usar el nuevo método del PrismaService en lugar de acceder directamente.
+        const updated = await this.prisma.updateInstanceStateByName(
+          payload.instance,
+          appState,
+        );
 
         if (updated.count > 0) {
           this.logger.log(
@@ -74,7 +72,7 @@ export class WebhooksController {
         }
       }
 
-      // Opcional: Aún puedes delegar el payload al servicio para manejar otros eventos (como mensajes entrantes).
+      // Opcional: Delegar al servicio para manejar otros eventos (como mensajes entrantes).
       await this.evolutionApiService.handleEvolutionWebhook(payload);
 
     } catch (error) {
@@ -170,3 +168,4 @@ export class WebhooksController {
     return instanceTag ? instanceTag.replace('whatsapp-instance-', '') : null;
   }
 }
+

@@ -12,6 +12,7 @@ import {
   Req,
   UseGuards,
   Logger,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { EvolutionService } from '../evolution/evolution.service';
@@ -62,12 +63,10 @@ export class EvolutionApiController {
     return {
       success: true,
       instances: refreshed.map((instance) => ({
-        // ✅ --- CORRECCIÓN APLICADA AQUÍ ---
-        id: instance.id, // ID numérico para las funciones internas (delete, connect, etc.).
+        id: instance.id,
         name: instance.name,
         state: instance.state,
-        guid: instance.instanceGuid, // GUID para mostrar en el panel.
-        // --- FIN DE LA CORRECCIÓN ---
+        guid: instance.instanceGuid,
       })),
     };
   }
@@ -100,39 +99,17 @@ export class EvolutionApiController {
   }
   
   /**
-   * Obtiene un nuevo código QR para una instancia desconectada.
-   * ESTA RUTA YA NO SE UTILIZA, SE HA MOVIDO A qr.controller.ts
-   */
-  @Get('qr/:instance')
-  async getQrCode(@Param('instance') instance: string, @Req() req: AuthReq) {
-    const { locationId } = req;
-    const inst = await this.prisma.getInstance(instance);
-    if (!inst || inst.userId !== locationId) {
-      throw new HttpException('Instance not found or not authorized', HttpStatus.FORBIDDEN);
-    }
-    try {
-      const qr = await this.evolutionService.getQrCode(inst.apiTokenInstance, instance);
-      return {
-        success: true,
-        type: qr.type,  // 'qr' o 'code'
-        data: qr.data,  // base64 o string
-      };
-    } catch (err: any) {
-      this.logger.error(`Failed to get QR for ${instance}: ${err.message}`);
-      if (err instanceof HttpException) throw err;
-      throw new HttpException('Failed to fetch QR code', HttpStatus.INTERNAL_SERVER_ERROR);
-    }
-  }
-
-  /**
    * Desconecta una instancia de WhatsApp sin borrarla.
+   * ✅ CORRECCIÓN: Ahora usa el ID numérico de la base de datos.
    */
-  @Delete(':instance/logout')
-  async logoutInstance(@Param('instance') instance: string, @Req() req: AuthReq) {
+  @Delete(':id/logout')
+  async logoutInstance(@Param('id') id: string, @Req() req: AuthReq) {
     const { locationId } = req;
-    const inst = await this.prisma.getInstance(instance);
+    const instanceId = BigInt(id);
+    const inst = await this.prisma.getInstanceById(instanceId);
+
     if (!inst || inst.userId !== locationId) {
-      throw new HttpException('Instance not found or not authorized', HttpStatus.FORBIDDEN);
+      throw new UnauthorizedException('Instance not found or not authorized');
     }
     try {
       await this.evolutionService.logoutInstance(
@@ -141,7 +118,7 @@ export class EvolutionApiController {
       );
       return { success: true, message: 'Logout command sent successfully.' };
     } catch (err: any) {
-      this.logger.error(`Failed to logout ${instance}: ${err.message}`);
+      this.logger.error(`Failed to logout ${inst.name}: ${err.message}`);
       if (err instanceof HttpException) throw err;
       throw new HttpException('Failed to logout instance', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -149,30 +126,33 @@ export class EvolutionApiController {
 
   /**
    * Borra una instancia permanentemente, tanto de Evolution API como de la base de datos local.
+   * ✅ CORRECCIÓN: Ahora usa el ID numérico de la base de datos.
    */
-  @Delete(':instance')
-  async deleteInstance(@Param('instance') instance: string, @Req() req: AuthReq) {
+  @Delete(':id')
+  async deleteInstance(@Param('id') id: string, @Req() req: AuthReq) {
     const { locationId } = req;
-    this.logger.log(`Attempting to delete instance: ${instance} for location: ${locationId}`);
-    const instanceData = await this.prisma.getInstance(instance);
+    this.logger.log(`Attempting to delete instance ID: ${id} for location: ${locationId}`);
+    
+    const instanceId = BigInt(id);
+    const instanceData = await this.prisma.getInstanceById(instanceId);
+
     if (!instanceData || instanceData.userId !== locationId) {
-      throw new HttpException('Instance not found or not authorized for this location', HttpStatus.FORBIDDEN);
+      throw new UnauthorizedException('Instance not found or not authorized for this location');
     }
     
-    // 1. Borrar de Evolution API
     try {
       await this.evolutionService.deleteInstance(
         instanceData.apiTokenInstance,
         instanceData.idInstance,
       );
-      this.logger.log(`Instance ${instance} deleted from Evolution API.`);
+      this.logger.log(`Instance ${instanceData.name} deleted from Evolution API.`);
     } catch (error) {
-      this.logger.warn(`Could not delete ${instance} from Evolution. It might already be gone. Continuing...`);
+      this.logger.warn(`Could not delete ${instanceData.name} from Evolution. It might already be gone. Continuing...`);
     }
 
-    // 2. Borrar de la base de datos local
-    await this.prisma.removeInstance(instance);
-    this.logger.log(`Instance ${instance} deleted from local database.`);
+    // Nota: Asegúrate de tener el método 'removeInstanceById' en tu prisma.service.ts
+    await this.prisma.removeInstanceById(instanceId);
+    this.logger.log(`Instance ID ${id} deleted from local database.`);
     return {
       success: true,
       message: 'Instance deleted successfully',
@@ -181,6 +161,7 @@ export class EvolutionApiController {
 
   /**
    * Actualiza el nombre (nickname) de una instancia.
+   * Nota: Este método también necesitaría ser ajustado si se usa desde el frontend.
    */
   @Patch(':instance')
   async updateInstance(
@@ -206,5 +187,4 @@ export class EvolutionApiController {
     }
   }
 }
-
 

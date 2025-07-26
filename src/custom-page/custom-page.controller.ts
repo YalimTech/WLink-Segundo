@@ -268,7 +268,7 @@ export class CustomPageController {
     <div>
       <p className="font-semibold">{inst.name || 'Unnamed'}</p>
       <p className="text-sm text-gray-400">ID local: {inst.id}</p>
-      <p className="text-sm text-gray-500">GUID: {inst.instanceGuid}</p>
+      <p className="text-sm text-gray-500">GUID: {inst.idInstance}</p>
       <span
         className={
           "text-xs px-2 py-1 rounded-full " +

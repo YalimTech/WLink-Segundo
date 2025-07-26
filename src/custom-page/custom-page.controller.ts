@@ -8,6 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  UnauthorizedException, // Asegúrate de importar UnauthorizedException
 } from '@nestjs/common';
 import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
@@ -41,6 +42,7 @@ export class CustomPageController {
     try {
       const sharedSecret = this.configService.get<string>('GHL_SHARED_SECRET');
       if (!sharedSecret) {
+        this.logger.error('GHL_SHARED_SECRET not configured on the server.'); // LOG
         return res
           .status(400)
           .json({ error: 'Shared secret not configured on the server.' });
@@ -50,20 +52,31 @@ export class CustomPageController {
         body.encryptedData,
         sharedSecret,
       ).toString(CryptoJS.enc.Utf8);
+
+      if (!decrypted) {
+        this.logger.warn(
+          'GHL context decryption failed. Decrypted content is empty. Check your GHL_SHARED_SECRET.', // LOG
+        );
+        throw new UnauthorizedException('Invalid GHL context: decryption failed.');
+      }
+
       const userData = JSON.parse(decrypted);
 
-      this.logger.log('Decrypted user data received.');
+      this.logger.log('Decrypted user data received.'); // LOG
 
-      // ✅ REAFIRMACIÓN: Usar activeLocation como fuente principal, ya que el guard debería asegurar su presencia
+      // ✅ REAFIRMACIÓN: Usar activeLocation como fuente principal
       const locationId = userData.activeLocation;
 
       if (!locationId) {
-        return res
-          .status(400)
-          .json({ error: 'No active location ID found in user data', userData });
+        this.logger.warn({
+          message: 'No activeLocation property found in decrypted GHL payload.',
+          decryptedPayload: userData,
+        }); // LOG
+        throw new UnauthorizedException('No active location ID in user context');
       }
 
       const user = await this.prisma.findUser(locationId);
+      console.log('User found in DB:', user ? user.id : 'None'); // LOG
 
       return res.json({
         success: true,
@@ -74,10 +87,11 @@ export class CustomPageController {
           : null,
       });
     } catch (error) {
-      this.logger.error('Error decrypting user data:', error);
-      return res
-        .status(400)
-        .json({ error: 'Failed to decrypt user data', details: error.message });
+      this.logger.error('Error decrypting user data:', error.stack); // LOG
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      throw new UnauthorizedException('Invalid or malformed GHL context');
     }
   }
 
@@ -115,14 +129,16 @@ export class CustomPageController {
                 };
                 window.addEventListener('message', listener);
                 window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
-                return () => window.removeEventListener('message', listener); // CORREGIDO: 'messaage' a 'message'
+                // Corregido 'messaage' a 'message' en el cleanup del useEffect
+                return () => window.removeEventListener('message', listener);
               }, []);
 
               useEffect(() => {
                 if (locationId) {
+                  console.log('LocationId set:', locationId, 'Loading instances...'); // LOG
                   loadInstances();
                   if (mainIntervalRef.current) clearInterval(mainIntervalRef.current);
-                  mainIntervalRef.current = setInterval(loadInstances, 10000);
+                  mainIntervalRef.current = setInterval(loadInstances, 10000); // Polling cada 10s para la lista general
                 }
                 return () => {
                   if (mainIntervalRef.current) clearInterval(mainIntervalRef.current);
@@ -131,6 +147,7 @@ export class CustomPageController {
               }, [locationId]);
 
               async function makeApiRequest(url, options = {}) {
+                console.log(\`Making API request to: \${url}\`, options); // LOG
                 const res = await fetch(url, {
                   credentials: 'include',
                   headers: { 'Content-Type': 'application/json', 'X-GHL-Context': encrypted },
@@ -141,10 +158,14 @@ export class CustomPageController {
                 try {
                   data = await res.json();
                 } catch (e) {
-                  console.error(\`Error parsing JSON from \${url}:\`, e, res); // Log completo de la respuesta
+                  console.error(\`Error parsing JSON from \${url}. Status: \${res.status} \${res.statusText}\`, e, res); // Log completo de la respuesta
                   throw new Error(res.statusText || 'Invalid JSON response from server');
                 }
-                if (!res.ok) throw new Error(data.message || 'API request failed');
+                if (!res.ok) {
+                  console.error(\`API request to \${url} failed. Status: \${res.status}. Response:\`, data); // LOG
+                  throw new Error(data.message || 'API request failed');
+                }
+                console.log(\`API request to \${url} successful. Response:\`, data); // LOG
                 return data;
               }
 
@@ -153,8 +174,10 @@ export class CustomPageController {
                   const res = await makeApiRequest('/app/decrypt-user-data', { method: 'POST', body: JSON.stringify({ encryptedData: enc }) });
                   setEncrypted(enc);
                   setLocationId(res.locationId);
+                  console.log('User data decrypted and locationId set:', res.locationId); // LOG
                 } catch (err) {
-                  console.error('Error processing user data:', err);
+                  console.error('Error processing user data:', err); // LOG
+                  alert('Failed to load user data. Please ensure the app is installed correctly.');
                 }
               }
 
@@ -168,18 +191,20 @@ export class CustomPageController {
                   // Esto cubre escenarios donde el polling del QR específico podría haberse detenido
                   // o si el estado cambia por un webhook mientras el modal está abierto.
                   if (showQr && qrInstanceIdRef.current) {
-                    const currentQrInstance = res.instances.find(inst => inst.id === qrInstanceIdRef.current);
-                    console.log('Main polling: Current QR instance state:', currentQrInstance?.state); // LOG: Estado del QR en el polling principal
+                    const currentQrInstance = res.instances.find(inst => String(inst.id) === String(qrInstanceIdRef.current)); // ✅ Usar String() para comparación segura de BigInt
+                    console.log('Main polling: Current QR instance state for QR modal:', currentQrInstance?.state); // LOG: Estado del QR en el polling principal
+
+                    // Si la instancia asociada al QR ya no es 'qr_code' o 'starting'
                     if (currentQrInstance && currentQrInstance.state !== 'qr_code' && currentQrInstance.state !== 'starting') {
-                      console.log('Main polling: Closing QR modal as state is no longer QR/starting.');
+                      console.log(\`Main polling: Closing QR modal as state is now \${currentQrInstance.state}. \`);
                       clearInterval(pollRef.current); // Detener polling del QR si estaba activo
                       pollRef.current = null;
                       setShowQr(false);
                       setQr('');
                       qrInstanceIdRef.current = null;
                     } else if (!currentQrInstance) {
-                      // Si la instancia del QR ya no existe (ej. fue eliminada), cerrar el modal.
-                      console.log('Main polling: Closing QR modal as instance no longer exists.');
+                      // ✅ MEJORA: Si la instancia del QR ya no existe (ej. fue eliminada del backend)
+                      console.log('Main polling: Closing QR modal as instance no longer exists in backend data.');
                       clearInterval(pollRef.current);
                       pollRef.current = null;
                       setShowQr(false);
@@ -188,17 +213,21 @@ export class CustomPageController {
                     }
                   }
                 } catch (e) {
-                  console.error('Failed to load instances in main polling', e);
+                  console.error('Failed to load instances in main polling', e); // LOG
                 }
               }
 
               async function submit(e) {
                 e.preventDefault();
                 try {
-                  await makeApiRequest('/api/instances', { method: 'POST', body: JSON.stringify({ locationId, ...form }) });
+                  const newInstanceData = { locationId, ...form };
+                  console.log('Submitting new instance:', newInstanceData); // LOG
+                  await makeApiRequest('/api/instances', { method: 'POST', body: JSON.stringify(newInstanceData) });
                   setForm({ instanceId: '', token: '', instanceName: '' }); // Limpiar el formulario
                   await loadInstances();
+                  alert('Instance added successfully!');
                 } catch (err) {
+                  console.error('Error adding instance:', err); // LOG
                   alert(err.message);
                 }
               }
@@ -210,26 +239,29 @@ export class CustomPageController {
                 // Asegurarse de que solo un sondeo se ejecute por QR a la vez
                 if (pollRef.current) {
                   clearInterval(pollRef.current);
+                  console.log('Cleared previous QR polling interval.'); // LOG
                 }
                 qrInstanceIdRef.current = instanceId; // Guarda el ID de la instancia cuyo QR se está mostrando
                 
                 pollRef.current = setInterval(async () => {
                   try {
                     const res = await makeApiRequest('/api/instances');
-                    const updatedInstance = res.instances.find(inst => inst.id === instanceId);
+                    // ✅ Usar String() para comparación segura de BigInt.
+                    // Esto es CRÍTICO si los IDs de Prisma son BigInt y se serializan a string en JSON.
+                    const updatedInstance = res.instances.find(inst => String(inst.id) === String(instanceId)); 
                     
                     console.log(\`QR polling for \${instanceId}: Fetched state \${updatedInstance?.state}\`); // LOG: Estado específico del QR
 
                     if (updatedInstance) {
                       setInstances(res.instances); // Siempre actualiza la lista para reflejar el estado más reciente
 
-                      // ✅ MEJORA: Condición para detener el polling y cerrar el modal.
+                      // ✅ Condición para detener el polling y cerrar el modal.
                       // Si el estado NO es 'qr_code' Y NO es 'starting', entonces cerramos el modal.
                       // Esto cubre 'authorized', 'notAuthorized', 'blocked', 'yellowCard'.
                       if (updatedInstance.state !== 'qr_code' && updatedInstance.state !== 'starting') {
                         console.log(\`QR polling: State \${updatedInstance.state} detected, closing QR modal.\`);
                         clearInterval(pollRef.current);
-                        pollRef.current = null;
+                        pollRef.current = null; // Asegura que la referencia se limpie
                         setShowQr(false);
                         setQr('');
                         qrInstanceIdRef.current = null; // Limpiar el ID de la instancia del QR
@@ -237,8 +269,8 @@ export class CustomPageController {
                       // No necesitamos una condición 'if (updatedInstance.state === 'authorized')' separada aquí,
                       // ya que la condición superior ya lo maneja de forma más general.
                     } else {
-                      // Si la instancia ya no se encuentra (ej. fue eliminada o el ID es incorrecto), detener el sondeo.
-                      console.log(\`QR polling: Instance \${instanceId} not found, stopping polling and closing QR.\`);
+                      // ✅ MEJORA: Si la instancia ya no se encuentra (ej. fue eliminada del backend)
+                      console.log(\`QR polling: Instance \${instanceId} not found in fetched data, stopping polling and closing QR.\`);
                       clearInterval(pollRef.current);
                       pollRef.current = null;
                       setShowQr(false);
@@ -246,7 +278,7 @@ export class CustomPageController {
                       qrInstanceIdRef.current = null;
                     }
                   } catch (error) {
-                    console.error('Error during QR polling:', error);
+                    console.error('Error during QR polling:', error); // LOG
                     // ✅ MEJORA: En caso de error en el polling del QR, también cerramos el modal
                     // para evitar que se quede atascado y limpiamos el polling.
                     clearInterval(pollRef.current);
@@ -254,7 +286,6 @@ export class CustomPageController {
                     setShowQr(false);
                     setQr('');
                     qrInstanceIdRef.current = null;
-                    // No alertamos para no molestar al usuario con errores de polling, solo los logueamos.
                   }
                 }, 2000); // ✅ MEJORA: Sondea un poco más rápido (cada 2 segundos) para transiciones rápidas
               }
@@ -262,29 +293,35 @@ export class CustomPageController {
               async function connectInstance(id) {
                 setQr(''); // Limpiar cualquier QR previo
                 setShowQr(true); // Mostrar el modal del QR inmediatamente
-                if (pollRef.current) clearInterval(pollRef.current); // Detener sondeo anterior si lo hay
+                if (pollRef.current) {
+                  clearInterval(pollRef.current);
+                  console.log('Cleared previous polling before new QR request.'); // LOG
+                }
                 qrInstanceIdRef.current = id; // Asignar el ID de la instancia al ref para el QR
 
                 try {
+                  console.log(\`Attempting to fetch QR for instance ID: \${id}\`); // LOG
                   // La petición para obtener el QR / iniciar conexión
                   const res = await makeApiRequest('/api/qr/' + id);
-                  console.log(\`QR API response for \${id}:\`, res); // LOG: Respuesta del QR
+                  console.log(\`QR API response for \${id}:\`, res); // LOG: Respuesta del QR completa
 
                   if (res.type === 'qr') {
                     const qrData = res.data.startsWith('data:image') ? res.data : 'data:image/png;base64,' + res.data;
                     setQr(qrData);
+                    console.log('QR data set to state.'); // LOG
                   } else if (res.type === 'code') {
                     const qrImage = await generateQrFromString(res.data);
                     setQr(qrImage);
+                    console.log('Pairing code QR image generated and set to state.'); // LOG
                   } else {
-                    throw new Error('Unexpected QR response format.');
+                    throw new Error('Unexpected QR response format. Type was: ' + res.type);
                   }
                   
                   // Iniciar el sondeo para el estado de la instancia inmediatamente después de obtener el QR
                   startPolling(id);
 
                 } catch (err) {
-                  console.error('Error obtaining QR:', err); // LOG: Error al obtener QR
+                  console.error('Error obtaining QR:', err); // LOG detallado
                   setQr('');
                   setShowQr(false); // Asegurarse de que el modal se cierre si la petición de QR falla.
                   qrInstanceIdRef.current = null; // Limpiar el ID de la instancia del QR
@@ -294,7 +331,10 @@ export class CustomPageController {
 
               async function generateQrFromString(text) {
                 return new Promise((resolve, reject) => {
-                  if (!window.QRCode) return reject(new Error('QRCode library not loaded'));
+                  if (!window.QRCode) {
+                    console.error('QRCode library not loaded!'); // LOG
+                    return reject(new Error('QRCode library not loaded'));
+                  }
                   const container = document.createElement('div');
                   new window.QRCode(container, {
                     text,
@@ -302,11 +342,15 @@ export class CustomPageController {
                     height: 256,
                     correctLevel: window.QRCode.CorrectLevel.H,
                   });
+                  // Pequeño retraso para asegurar que el QR se renderiza en el canvas/img antes de capturar
                   setTimeout(() => {
                     const img = container.querySelector('img') || container.querySelector('canvas');
                     if (img) {
-                      resolve(img.src || img.toDataURL('image/png'));
+                      const dataUrl = img.src || img.toDataURL('image/png');
+                      console.log('Generated QR from string successfully.'); // LOG
+                      resolve(dataUrl);
                     } else {
+                      console.error('Failed to find QR image in container after generation.'); // LOG
                       reject(new Error('Failed to generate QR image'));
                     }
                   }, 100);
@@ -316,12 +360,14 @@ export class CustomPageController {
               async function logoutInstance(id) {
                 if (!confirm('¿Desconectar instancia?')) return;
                 try {
+                  console.log(\`Attempting to logout instance ID: \${id}\`); // LOG
                   await makeApiRequest('/api/instances/' + id + '/logout', { method: 'DELETE' });
-                  console.log(\`Instance \${id} logout initiated.\`); // LOG: Logout iniciado
+                  console.log(\`Instance \${id} logout command sent successfully. Reloading instances...\`); // LOG
                   // Tras el logout, recargar instancias. El polling principal se encargará de actualizar el estado.
-                  await loadInstances(); 
+                  await loadInstances(); 
+                  alert('Instance logout command sent. State will update shortly.');
                 } catch (err) {
-                  console.error('Error disconnecting instance:', err); // LOG: Error al desconectar
+                  console.error('Error disconnecting instance:', err); // LOG
                   alert('Error al desconectar: ' + err.message);
                 }
               }
@@ -329,12 +375,13 @@ export class CustomPageController {
               async function deleteInstance(id) {
                 if (!confirm('¿Eliminar instancia permanentemente?')) return;
                 try {
+                  console.log(\`Attempting to delete instance ID: \${id}\`); // LOG
                   await makeApiRequest('/api/instances/' + id, { method: 'DELETE' });
-                  console.log(\`Instance \${id} deleted.\`); // LOG: Instancia eliminada
-                  // Tras la eliminación, recargar instancias.
-                  await loadInstances();
+                  console.log(\`Instance \${id} delete command sent. Reloading instances...\`); // LOG
+                  await loadInstances(); // Recargar instancias para reflejar la eliminación
+                  alert('Instance deletion command sent. Panel will update shortly.');
                 } catch (err) {
-                  console.error('Error deleting instance:', err); // LOG: Error al eliminar
+                  console.error('Error deleting instance:', err); // LOG
                   alert('Error al eliminar: ' + err.message);
                 }
               }
@@ -368,11 +415,13 @@ export class CustomPageController {
                               }
                             >
                               {/* =============================================== */}
-                              {/* ✅ MODIFICACIÓN CLAVE EN LA VISUALIZACIÓN DEL ESTADO (Más precisa) */}
+                              {/* ✅ VISUALIZACIÓN DEL ESTADO (FINAL) */}
                               {/* =============================================== */}
                               {
-                                showQr && qrInstanceIdRef.current === inst.id && (inst.state === 'qr_code' || inst.state === 'starting')
-                                  ? 'Awaiting Scan' // Si el modal está abierto para esta instancia y está en estado QR/connecting
+                                // Muestra "Awaiting Scan" solo si el modal de QR está abierto y es para esta instancia.
+                                // Comparamos los IDs como strings para evitar problemas de BigInt.
+                                showQr && String(qrInstanceIdRef.current) === String(inst.id) && (inst.state === 'qr_code' || inst.state === 'starting')
+                                  ? 'Awaiting Scan'
                                   : inst.state === 'authorized'
                                   ? 'Connected'
                                   : inst.state === 'notAuthorized'
@@ -383,7 +432,7 @@ export class CustomPageController {
                                   ? 'Connecting...'
                                   : inst.state === 'yellowCard' || inst.state === 'blocked'
                                   ? 'Error / Blocked'
-                                  : inst.state || 'Unknown' // Estado por defecto si no coincide con ninguno
+                                  : inst.state || 'Unknown' // Mostrar el estado tal cual si no hay mapeo específico
                               }
                             </span>
                           </div>

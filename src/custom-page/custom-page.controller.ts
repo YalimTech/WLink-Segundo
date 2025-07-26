@@ -1,4 +1,3 @@
-//custom-page/custom-page.controller.ts
 import {
   Controller,
   Get,
@@ -102,7 +101,8 @@ export class CustomPageController {
               const [locationId, setLocationId] = useState(null);
               const [encrypted, setEncrypted] = useState(null);
               const [instances, setInstances] = useState([]);
-              const [form, setForm] = useState({ instanceId: '', token: '', instanceName: '' });
+              // Eliminamos 'instanceId' del estado del formulario ya que ya no es una entrada directa del usuario para el GUID.
+              const [form, setForm] = useState({ token: '', instanceName: '' });
               const [qr, setQr] = useState('');
               const [showQr, setShowQr] = useState(false);
               const pollRef = useRef(null);
@@ -162,15 +162,23 @@ export class CustomPageController {
               async function submit(e) {
                 e.preventDefault();
                 try {
-                  await makeApiRequest('/api/instances', { method: 'POST', body: JSON.stringify({ locationId, ...form }) });
-                  setForm({ instanceId: '', token: '', instanceName: '' });
+                  // Se envía solo locationId, token y instanceName.
+                  // El GUID real será obtenido por el backend de Evolution API.
+                  await makeApiRequest('/api/instances', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                      locationId,
+                      token: form.token,
+                      instanceName: form.instanceName
+                    })
+                  });
+                  setForm({ token: '', instanceName: '' }); // Limpiar el formulario
                   await loadInstances();
                 } catch (err) {
                   alert(err.message);
                 }
               }
 
-              // ✅ CORRECCIÓN: Función startPolling definida
               function startPolling(instanceId) {
                 if (pollRef.current) clearInterval(pollRef.current);
                 
@@ -202,7 +210,6 @@ export class CustomPageController {
                   const res = await makeApiRequest('/api/qr/' + id);
 
                   if (res.type === 'qr') {
-                    // ✅ CORRECCIÓN: Asegura que el data URI sea correcto
                     const qrData = res.data.startsWith('data:image') ? res.data : 'data:image/png;base64,' + res.data;
                     setQr(qrData);
                   } else if (res.type === 'code') {
@@ -212,7 +219,6 @@ export class CustomPageController {
                     throw new Error('Unexpected QR response format.');
                   }
                   
-                  // Esta llamada ahora funcionará
                   startPolling(id);
 
                 } catch (err) {
@@ -262,86 +268,91 @@ export class CustomPageController {
                     <h2 className="text-xl font-semibold">Your Instances</h2>
                     <div className="space-y-4">
                       {instances.length === 0 && <p className="text-gray-500">No instances added.</p>}
-
                       
-                      
-                  {instances.map((inst) => (
-  <div key={inst.id} className="flex justify-between items-center p-4 border rounded-xl">
-    <div>
-      <p className="font-semibold">{inst.name || 'Unnamed'}</p>
-      <p className="text-sm text-gray-400">ID local: {inst.id}</p>
-      {/* CORRECCIÓN: Usar 'inst.guid' para mostrar el GUID de Evolution API */}
-      <p className="text-sm text-gray-500">GUID: {inst.guid}</p>
-      <span
-        className={
-          "text-xs px-2 py-1 rounded-full " +
-          (inst.state === 'authorized' || inst.state === 'connected'
-            ? 'bg-green-200 text-green-800'
-            : 'bg-yellow-200 text-yellow-800')
-        }
-      >
-        {inst.state === 'authorized' || inst.state === 'connected'
-          ? 'Connected'
-          : inst.state === 'qr_code' || inst.state === 'open' || inst.state === 'notAuthorized'
-          ? 'Awaiting Scan'
-          : inst.state}
-      </span>
-    </div>
-    <div className="flex gap-2">
-      {inst.state === 'authorized' || inst.state === 'connected' ? (
-        <button
-          onClick={() => logoutInstance(inst.id)}
-          className="px-3 py-1 rounded-xl bg-yellow-500 text-white"
-        >
-          Logout
-        </button>
-      ) : (
-        <button
-          onClick={() => connectInstance(inst.id)}
-          className="px-3 py-1 rounded-xl bg-green-600 text-white"
-        >
-          Connect
-        </button>
-      )}
-      <button
-        onClick={() => deleteInstance(inst.id)}
-        className="px-3 py-1 rounded-xl bg-red-600 text-white"
-      >
-        Delete
-      </button>
-    </div>
-  </div>
-))}
-
-
-
-
-
+                      {instances.map((inst) => (
+                        <div key={inst.id} className="flex justify-between items-center p-4 border rounded-xl">
+                          <div>
+                            <p className="font-semibold">{inst.name || 'Unnamed'}</p>
+                            <p className="text-sm text-gray-400">ID local: {inst.id}</p>
+                            {/* CORRECCIÓN: Usar 'inst.guid' para mostrar el GUID real de Evolution API */}
+                            <p className="text-sm text-gray-500">GUID: {inst.guid}</p>
+                            <span
+                              className={
+                                "text-xs px-2 py-1 rounded-full " +
+                                (inst.state === 'authorized' // Estado autorizado
+                                  ? 'bg-green-200 text-green-800'
+                                  : inst.state === 'qr_code' || inst.state === 'starting' || inst.state === 'notAuthorized'
+                                  ? 'bg-yellow-200 text-yellow-800' // Estados de espera o inicio
+                                  : inst.state === 'yellowCard' || inst.state === 'blocked'
+                                  ? 'bg-red-222 text-red-800' // Estados de error o bloqueado
+                                  : 'bg-gray-200 text-gray-800') // Para cualquier otro estado no mapeado
+                              }
+                            >
+                              {/* CORRECCIÓN: Ajustar la lógica para los estados de visualización */}
+                              {inst.state === 'authorized'
+                                ? 'Connected'
+                                : inst.state === 'qr_code'
+                                ? 'Awaiting Scan'
+                                : inst.state === 'starting'
+                                ? 'Connecting...'
+                                : inst.state === 'notAuthorized'
+                                ? 'Disconnected'
+                                : inst.state === 'yellowCard' || inst.state === 'blocked'
+                                ? 'Error / Blocked'
+                                : inst.state || 'Unknown'} {/* Mostrar el estado tal cual si no hay mapeo específico, o 'Unknown' */}
+                            </span>
+                          </div>
+                          <div className="flex gap-2">
+                            {inst.state === 'authorized' || inst.state === 'connected' ? (
+                              <button
+                                onClick={() => logoutInstance(inst.id)}
+                                className="px-3 py-1 rounded-xl bg-yellow-500 text-white"
+                              >
+                                Logout
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => connectInstance(inst.id)}
+                                className="px-3 py-1 rounded-xl bg-green-600 text-white"
+                              >
+                                Connect
+                              </button>
+                            )}
+                            <button
+                              onClick={() => deleteInstance(inst.id)}
+                              className="px-3 py-1 rounded-xl bg-red-600 text-white"
+                            >
+                              Delete
+                            </button>
+                          </div>
+                        </div>
+                      ))}
                     </div>
                   </div>
                   <div className="bg-white rounded-2xl shadow-md p-6 space-y-4">
                     <h2 className="text-xl font-semibold">Add New Instance</h2>
                     <form onSubmit={submit} className="grid gap-4">
-                      <input 
-                        required 
-                        value={form.instanceId} 
-                        onChange={(e) => setForm({ ...form, instanceId: e.target.value })} 
-                        placeholder="Instance ID (GUID)" 
-                        className="border p-2 rounded-xl" 
+                      {/* ELIMINAMOS EL CAMPO 'Instance ID (GUID)' ya que el GUID lo genera Evolution API */}
+                      {/* <input
+                        required
+                        value={form.instanceId}
+                        onChange={(e) => setForm({ ...form, instanceId: e.target.value })}
+                        placeholder="Instance ID (GUID)"
+                        className="border p-2 rounded-xl"
+                      /> */}
+                      <input
+                        required
+                        value={form.token}
+                        onChange={(e) => setForm({ ...form, token: e.target.value })}
+                        placeholder="API Token"
+                        className="border p-2 rounded-xl"
                       />
-                      <input 
-                        required 
-                        value={form.token} 
-                        onChange={(e) => setForm({ ...form, token: e.target.value })} 
-                        placeholder="API Token" 
-                        className="border p-2 rounded-xl" 
-                      />
-                      <input 
-                        required 
-                        value={form.instanceName} 
-                        onChange={(e) => setForm({ ...form, instanceName: e.target.value })} 
-                        placeholder="Instance Name (e.g., YC2)" 
-                        className="border p-2 rounded-xl" 
+                      <input
+                        required
+                        value={form.instanceName}
+                        onChange={(e) => setForm({ ...form, instanceName: e.target.value })}
+                        placeholder="Instance Name (e.g., YC2)"
+                        className="border p-2 rounded-xl"
                       />
                       <button className="px-4 py-2 rounded-xl bg-indigo-600 text-white">Add Instance</button>
                     </form>
@@ -364,5 +375,4 @@ export class CustomPageController {
     `;
   }
 }
-
 

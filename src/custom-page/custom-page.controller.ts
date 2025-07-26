@@ -273,11 +273,11 @@ export class CustomPageController {
     </div>
     <div className="flex gap-2">
       {inst.state === 'authorized' ? (
-        <button onClick={() => logoutInstance(inst.instanceId)} className="px-3 py-1 rounded-xl bg-yellow-500 text-white">Logout</button>
+        <button onClick={() => logoutInstance(inst.id)} className="px-3 py-1 rounded-xl bg-yellow-500 text-white">Logout</button>
       ) : (
-        <button onClick={() => connectInstance(inst.instanceId)} className="px-3 py-1 rounded-xl bg-green-600 text-white">Connect</button>
+        <button onClick={() => connectInstance(inst.id)} className="px-3 py-1 rounded-xl bg-green-600 text-white">Connect</button>
       )}
-      <button onClick={() => deleteInstance(inst.instanceId)} className="px-3 py-1 rounded-xl bg-red-600 text-white">Delete</button>
+      <button onClick={() => deleteInstance(inst.id)} className="px-3 py-1 rounded-xl bg-red-600 text-white">Delete</button>
     </div>
   </div>
 ))}

@@ -50,9 +50,9 @@ export class WebhooksController {
         this.logger.log(
           `Handling connection update for ${payload.instance}. New state: ${payload.data.state}`,
         );
-
-        // ✅ CORRECCIÓN DEFINITIVA: Reescribir la lógica para evitar el error de tipado.
-        let appState: InstanceState = 'unauthorized'; // Valor por defecto
+        
+        // ✅ CORRECCIÓN FINAL: Usar 'notAuthorized' que es el valor correcto de tu enum.
+        let appState: InstanceState = 'notAuthorized';
         if (payload.data.state === 'open') {
           appState = 'authorized';
         }

@@ -1,4 +1,4 @@
-//src/custom-page/custom-page.controller.ts
+// src/custom-page/custom-page.controller.ts
 import {
   Controller,
   Get,
@@ -54,13 +54,13 @@ export class CustomPageController {
 
       this.logger.log('Decrypted user data received.');
 
-      const locationId =
-        userData.activeLocation || userData.locationId || userData.companyId;
+      // ✅ REAFIRMACIÓN: Usar activeLocation como fuente principal, ya que el guard debería asegurar su presencia
+      const locationId = userData.activeLocation;
 
       if (!locationId) {
         return res
           .status(400)
-          .json({ error: 'No location ID found in user data', userData });
+          .json({ error: 'No active location ID found in user data', userData });
       }
 
       const user = await this.prisma.findUser(locationId);
@@ -107,6 +107,7 @@ export class CustomPageController {
               const [showQr, setShowQr] = useState(false);
               const pollRef = useRef(null);
               const mainIntervalRef = useRef(null);
+              const qrInstanceIdRef = useRef(null); // Para guardar el ID de la instancia cuyo QR se está mostrando
 
               useEffect(() => {
                 const listener = (e) => {
@@ -114,7 +115,7 @@ export class CustomPageController {
                 };
                 window.addEventListener('message', listener);
                 window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
-                return () => window.removeEventListener('messaage', listener);
+                return () => window.removeEventListener('message', listener); // CORREGIDO: 'messaage' a 'message'
               }, []);
 
               useEffect(() => {
@@ -135,7 +136,14 @@ export class CustomPageController {
                   headers: { 'Content-Type': 'application/json', 'X-GHL-Context': encrypted },
                   ...options,
                 });
-                const data = await res.json();
+                // ✅ MEJORA: Manejar errores JSON si la respuesta no es un JSON válido
+                let data;
+                try {
+                  data = await res.json();
+                } catch (e) {
+                  console.error(\`Error parsing JSON from \${url}:\`, e, res); // Log completo de la respuesta
+                  throw new Error(res.statusText || 'Invalid JSON response from server');
+                }
                 if (!res.ok) throw new Error(data.message || 'API request failed');
                 return data;
               }
@@ -146,7 +154,7 @@ export class CustomPageController {
                   setEncrypted(enc);
                   setLocationId(res.locationId);
                 } catch (err) {
-                  console.error(err);
+                  console.error('Error processing user data:', err);
                 }
               }
 
@@ -154,8 +162,33 @@ export class CustomPageController {
                 try {
                   const res = await makeApiRequest('/api/instances');
                   setInstances(res.instances);
+                  console.log('Main polling: Instances loaded', res.instances); // LOG: Ver instancias cargadas
+
+                  // ✅ MEJORA: Lógica para cerrar el modal QR desde el polling principal
+                  // Esto cubre escenarios donde el polling del QR específico podría haberse detenido
+                  // o si el estado cambia por un webhook mientras el modal está abierto.
+                  if (showQr && qrInstanceIdRef.current) {
+                    const currentQrInstance = res.instances.find(inst => inst.id === qrInstanceIdRef.current);
+                    console.log('Main polling: Current QR instance state:', currentQrInstance?.state); // LOG: Estado del QR en el polling principal
+                    if (currentQrInstance && currentQrInstance.state !== 'qr_code' && currentQrInstance.state !== 'starting') {
+                      console.log('Main polling: Closing QR modal as state is no longer QR/starting.');
+                      clearInterval(pollRef.current); // Detener polling del QR si estaba activo
+                      pollRef.current = null;
+                      setShowQr(false);
+                      setQr('');
+                      qrInstanceIdRef.current = null;
+                    } else if (!currentQrInstance) {
+                      // Si la instancia del QR ya no existe (ej. fue eliminada), cerrar el modal.
+                      console.log('Main polling: Closing QR modal as instance no longer exists.');
+                      clearInterval(pollRef.current);
+                      pollRef.current = null;
+                      setShowQr(false);
+                      setQr('');
+                      qrInstanceIdRef.current = null;
+                    }
+                  }
                 } catch (e) {
-                  console.error('Failed to load instances', e);
+                  console.error('Failed to load instances in main polling', e);
                 }
               }
 
@@ -171,57 +204,71 @@ export class CustomPageController {
               }
 
               // ===============================================
-              // ✅ MODIFICACIÓN CLAVE EN LA LÓGICA DE POLLING
+              // ✅ LÓGICA DE POLLING DEL QR REFINADA
               // ===============================================
               function startPolling(instanceId) {
-                // Limpiar cualquier sondeo previo para evitar múltiples intervalos
+                // Asegurarse de que solo un sondeo se ejecute por QR a la vez
                 if (pollRef.current) {
                   clearInterval(pollRef.current);
-                  pollRef.current = null; // Resetear la referencia
                 }
+                qrInstanceIdRef.current = instanceId; // Guarda el ID de la instancia cuyo QR se está mostrando
                 
                 pollRef.current = setInterval(async () => {
                   try {
                     const res = await makeApiRequest('/api/instances');
                     const updatedInstance = res.instances.find(inst => inst.id === instanceId);
                     
+                    console.log(\`QR polling for \${instanceId}: Fetched state \${updatedInstance?.state}\`); // LOG: Estado específico del QR
+
                     if (updatedInstance) {
                       setInstances(res.instances); // Siempre actualiza la lista para reflejar el estado más reciente
 
-                      // Si el estado es 'authorized' o 'notAuthorized', detenemos el sondeo y cerramos el QR
-                      if (updatedInstance.state === 'authorized' || updatedInstance.state === 'notAuthorized' || updatedInstance.state === 'blocked' || updatedInstance.state === 'yellowCard') {
+                      // ✅ MEJORA: Condición para detener el polling y cerrar el modal.
+                      // Si el estado NO es 'qr_code' Y NO es 'starting', entonces cerramos el modal.
+                      // Esto cubre 'authorized', 'notAuthorized', 'blocked', 'yellowCard'.
+                      if (updatedInstance.state !== 'qr_code' && updatedInstance.state !== 'starting') {
+                        console.log(\`QR polling: State \${updatedInstance.state} detected, closing QR modal.\`);
                         clearInterval(pollRef.current);
                         pollRef.current = null;
-                        setShowQr(false); // Cerrar el modal del QR
-                        setQr(''); // Limpiar el QR para que no se muestre el viejo si se abre de nuevo
-                        console.log('Polling stopped, QR closed, instance is now:', updatedInstance.state);
+                        setShowQr(false);
+                        setQr('');
+                        qrInstanceIdRef.current = null; // Limpiar el ID de la instancia del QR
                       }
+                      // No necesitamos una condición 'if (updatedInstance.state === 'authorized')' separada aquí,
+                      // ya que la condición superior ya lo maneja de forma más general.
                     } else {
-                      // Si la instancia ya no se encuentra (ej. fue eliminada), detener el sondeo.
+                      // Si la instancia ya no se encuentra (ej. fue eliminada o el ID es incorrecto), detener el sondeo.
+                      console.log(\`QR polling: Instance \${instanceId} not found, stopping polling and closing QR.\`);
                       clearInterval(pollRef.current);
                       pollRef.current = null;
                       setShowQr(false);
                       setQr('');
-                      console.log('Polling stopped, instance not found.');
+                      qrInstanceIdRef.current = null;
                     }
                   } catch (error) {
-                    console.error('Error during polling:', error);
-                    clearInterval(pollRef.current); // Detener el sondeo si hay un error
+                    console.error('Error during QR polling:', error);
+                    // ✅ MEJORA: En caso de error en el polling del QR, también cerramos el modal
+                    // para evitar que se quede atascado y limpiamos el polling.
+                    clearInterval(pollRef.current);
                     pollRef.current = null;
-                    setShowQr(false); // Cerrar el modal QR si el sondeo falla
+                    setShowQr(false);
                     setQr('');
+                    qrInstanceIdRef.current = null;
+                    // No alertamos para no molestar al usuario con errores de polling, solo los logueamos.
                   }
-                }, 3000); // Sondea cada 3 segundos
+                }, 2000); // ✅ MEJORA: Sondea un poco más rápido (cada 2 segundos) para transiciones rápidas
               }
 
               async function connectInstance(id) {
                 setQr(''); // Limpiar cualquier QR previo
                 setShowQr(true); // Mostrar el modal del QR inmediatamente
                 if (pollRef.current) clearInterval(pollRef.current); // Detener sondeo anterior si lo hay
+                qrInstanceIdRef.current = id; // Asignar el ID de la instancia al ref para el QR
 
                 try {
                   // La petición para obtener el QR / iniciar conexión
                   const res = await makeApiRequest('/api/qr/' + id);
+                  console.log(\`QR API response for \${id}:\`, res); // LOG: Respuesta del QR
 
                   if (res.type === 'qr') {
                     const qrData = res.data.startsWith('data:image') ? res.data : 'data:image/png;base64,' + res.data;
@@ -233,12 +280,14 @@ export class CustomPageController {
                     throw new Error('Unexpected QR response format.');
                   }
                   
-                  // Iniciar el sondeo para el estado de la instancia
+                  // Iniciar el sondeo para el estado de la instancia inmediatamente después de obtener el QR
                   startPolling(id);
 
                 } catch (err) {
+                  console.error('Error obtaining QR:', err); // LOG: Error al obtener QR
                   setQr('');
                   setShowQr(false); // Asegurarse de que el modal se cierre si la petición de QR falla.
+                  qrInstanceIdRef.current = null; // Limpiar el ID de la instancia del QR
                   alert('Error obteniendo QR: ' + err.message);
                 }
               }
@@ -268,9 +317,11 @@ export class CustomPageController {
                 if (!confirm('¿Desconectar instancia?')) return;
                 try {
                   await makeApiRequest('/api/instances/' + id + '/logout', { method: 'DELETE' });
-                  // Tras el logout, es crucial que el polling actualice el estado a 'notAuthorized'
+                  console.log(\`Instance \${id} logout initiated.\`); // LOG: Logout iniciado
+                  // Tras el logout, recargar instancias. El polling principal se encargará de actualizar el estado.
                   await loadInstances(); 
                 } catch (err) {
+                  console.error('Error disconnecting instance:', err); // LOG: Error al desconectar
                   alert('Error al desconectar: ' + err.message);
                 }
               }
@@ -279,8 +330,11 @@ export class CustomPageController {
                 if (!confirm('¿Eliminar instancia permanentemente?')) return;
                 try {
                   await makeApiRequest('/api/instances/' + id, { method: 'DELETE' });
+                  console.log(\`Instance \${id} deleted.\`); // LOG: Instancia eliminada
+                  // Tras la eliminación, recargar instancias.
                   await loadInstances();
                 } catch (err) {
+                  console.error('Error deleting instance:', err); // LOG: Error al eliminar
                   alert('Error al eliminar: ' + err.message);
                 }
               }
@@ -303,34 +357,38 @@ export class CustomPageController {
                               className={
                                 "text-xs px-2 py-1 rounded-full " +
                                 (inst.state === 'authorized'
-                                  ? 'bg-green-200 text-green-800'
+                                  ? 'bg-green-200 text-green-800' // Conectado y autorizado
                                   : inst.state === 'qr_code' || inst.state === 'starting'
-                                  ? 'bg-yellow-200 text-yellow-800'
+                                  ? 'bg-yellow-200 text-yellow-800' // Esperando acción (QR) o iniciando
                                   : inst.state === 'notAuthorized'
-                                  ? 'bg-red-200 text-red-800'
+                                  ? 'bg-red-200 text-red-800' // Desconectado (rojo para mayor visibilidad)
                                   : inst.state === 'yellowCard' || inst.state === 'blocked'
-                                  ? 'bg-red-500 text-white'
-                                  : 'bg-gray-200 text-gray-800')
+                                  ? 'bg-red-500 text-white' // Estados de error o bloqueado (más oscuro)
+                                  : 'bg-gray-200 text-gray-800') // Para cualquier otro estado no mapeado
                               }
                             >
                               {/* =============================================== */}
-                              {/* ✅ MODIFICACIÓN CLAVE EN LA VISUALIZACIÓN DEL ESTADO */}
+                              {/* ✅ MODIFICACIÓN CLAVE EN LA VISUALIZACIÓN DEL ESTADO (Más precisa) */}
                               {/* =============================================== */}
-                              {inst.state === 'authorized'
-                                ? 'Connected'
-                                : inst.state === 'qr_code'
-                                ? 'Awaiting Scan' // Opcional: Si el modal QR está visible y el estado es qr_code, puedes mostrar "Awaiting Scan". Si no, simplemente el estado del backend.
-                                : inst.state === 'starting'
-                                ? 'Connecting...'
-                                : inst.state === 'notAuthorized'
-                                ? 'Disconnected'
-                                : inst.state === 'yellowCard' || inst.state === 'blocked'
-                                ? 'Error / Blocked'
-                                : inst.state || 'Unknown'}
+                              {
+                                showQr && qrInstanceIdRef.current === inst.id && (inst.state === 'qr_code' || inst.state === 'starting')
+                                  ? 'Awaiting Scan' // Si el modal está abierto para esta instancia y está en estado QR/connecting
+                                  : inst.state === 'authorized'
+                                  ? 'Connected'
+                                  : inst.state === 'notAuthorized'
+                                  ? 'Disconnected'
+                                  : inst.state === 'qr_code'
+                                  ? 'Awaiting Scan (Background)' // Si el backend reporta QR pero el modal no está abierto activamente para él
+                                  : inst.state === 'starting'
+                                  ? 'Connecting...'
+                                  : inst.state === 'yellowCard' || inst.state === 'blocked'
+                                  ? 'Error / Blocked'
+                                  : inst.state || 'Unknown' // Estado por defecto si no coincide con ninguno
+                              }
                             </span>
                           </div>
                           <div className="flex gap-2">
-                            {inst.state === 'authorized' ? (
+                            {inst.state === 'authorized' ? ( // Solo 'authorized' debe poder desconectarse (hacer logout)
                               <button
                                 onClick={() => logoutInstance(inst.id)}
                                 className="px-3 py-1 rounded-xl bg-yellow-500 text-white"
@@ -359,7 +417,6 @@ export class CustomPageController {
                   <div className="bg-white rounded-2xl shadow-md p-6 space-y-4">
                     <h2 className="text-xl font-semibold">Add New Instance</h2>
                     <form onSubmit={submit} className="grid gap-4">
-                      {/* MANTENEMOS EL CAMPO 'Instance ID (GUID)' ya que es requerido por el backend para la validación */}
                       <input
                         required
                         value={form.instanceId}
@@ -385,10 +442,23 @@ export class CustomPageController {
                     </form>
                   </div>
                   {showQr && (
-                    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center" onClick={() => { setShowQr(false); if (pollRef.current) clearInterval(pollRef.current); setQr(''); }}>
+                    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center" 
+                         onClick={() => { 
+                           console.log('Overlay clicked: Closing QR modal.'); // LOG: Cierre por overlay
+                           setShowQr(false); 
+                           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+                           setQr(''); 
+                           qrInstanceIdRef.current = null; // Limpiar el ID de la instancia del QR
+                         }}>
                       <div className="bg-white p-6 rounded-2xl shadow-md text-center space-y-4" onClick={(e) => e.stopPropagation()}>
                         {qr ? <img src={qr} className="mx-auto" /> : <p>Loading QR...</p>}
-                        <button onClick={() => { setShowQr(false); if (pollRef.current) clearInterval(pollRef.current); setQr(''); }} className="px-3 py-1 rounded-xl bg-gray-700 text-white">Close</button>
+                        <button onClick={() => { 
+                          console.log('Close button clicked: Closing QR modal.'); // LOG: Cierre por botón
+                          setShowQr(false); 
+                          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+                          setQr(''); 
+                          qrInstanceIdRef.current = null; // Limpiar el ID de la instancia del QR
+                        }} className="px-3 py-1 rounded-xl bg-gray-700 text-white">Close</button>
                       </div>
                     </div>
                   )}

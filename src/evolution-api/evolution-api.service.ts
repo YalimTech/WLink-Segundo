@@ -185,51 +185,56 @@ export class EvolutionApiService extends BaseAdapter<
     );
   }
 
+  /**
+   * Maneja los webhooks entrantes de Evolution API.
+   * ✅ MEJORA: Más logs para depurar el estado de la instancia.
+   */
   public async handleEvolutionWebhook(webhook: EvolutionWebhook): Promise<void> {
     const instanceName = webhook.instance;
     if (!instanceName) {
-      this.logger.warn('Webhook received without an instance name. Ignoring.');
+      this.logger.warn('[EvolutionApiService] Webhook received without an instance name. Ignoring.');
       return;
     }
 
     this.logger.log(
-      `Processing webhook for instance: ${instanceName}, Event: ${webhook.event}`,
+      `[EvolutionApiService] Processing webhook for instance: '${instanceName}', Event: '${webhook.event}'.`,
     );
+    this.logger.debug(`[EvolutionApiService] Full Webhook Payload for '${instanceName}': ${JSON.stringify(webhook)}`);
 
-    // ✅ CORRECCIÓN N.º 1: Usar el nombre del evento correcto: 'connection.update'
-    if (webhook.event === 'connection.update' && webhook.data?.state) {
+
+    if (webhook.event === 'connection.update' && typeof webhook.data?.state !== 'undefined') {
       const state = webhook.data.state;
       let mappedStatus: InstanceState;
 
       switch (state) {
-        case 'open':
+        case 'open': // Evolution API uses 'open' for authorized
           mappedStatus = 'authorized';
           break;
         case 'connecting':
           mappedStatus = 'starting';
           break;
-        case 'close':
+        case 'close': // Evolution API uses 'close' for disconnected
           mappedStatus = 'notAuthorized';
           break;
+        case 'qrcode': // Sometimes the state might directly be 'qrcode'
+          mappedStatus = 'qr_code';
+          break;
         default:
-          this.logger.warn(`Unknown connection state received: ${state}`);
+          this.logger.warn(`[EvolutionApiService] Unknown connection state received for '${instanceName}': '${state}'. Not updating state.`);
           return;
       }
       
-      // ✅ CORRECCIÓN N.º 2: Actualizar la instancia por su NOMBRE, no por su ID.
+      this.logger.log(`[EvolutionApiService] Attempting to update instance '${instanceName}' state from webhook. Mapped Status: '${mappedStatus}'`);
       const updated = await this.prisma.updateInstanceStateByName(instanceName, mappedStatus);
       if (updated.count > 0) {
-        this.logger.log(`Instance ${instanceName} state updated to ${mappedStatus} via webhook.`);
+        this.logger.log(`[EvolutionApiService] Instance '${instanceName}' state updated to '${mappedStatus}' via webhook. Rows affected: ${updated.count}`);
       } else {
-        this.logger.warn(`Webhook for unknown instance ${instanceName}. Could not update state.`);
+        this.logger.warn(`[EvolutionApiService] Webhook for instance '${instanceName}' received, but could not find/update it in DB. Check instance name.`);
       }
-    }
-
-    if (webhook.event === 'messages.upsert' && webhook.data?.key?.remoteJid) {
-      // ✅ CORRECCIÓN N.º 2: Buscar la instancia por su NOMBRE.
+    } else if (webhook.event === 'messages.upsert' && webhook.data?.key?.remoteJid) {
       const instance = await this.prisma.findInstanceByNameOnly(instanceName);
       if (!instance) {
-        this.logger.warn(`Webhook for unknown instance ${instanceName}. Ignoring message.`);
+        this.logger.warn(`[EvolutionApiService] Webhook 'messages.upsert' for unknown instance '${instanceName}'. Ignoring message.`);
         return;
       }
 
@@ -246,20 +251,29 @@ export class EvolutionApiService extends BaseAdapter<
       transformedMsg.contactId = ghlContact.id;
       transformedMsg.locationId = instance.userId;
       await this.postInboundMessageToGhl(instance.userId, transformedMsg);
+      this.logger.log(`[EvolutionApiService] Message upsert processed for instance '${instanceName}'.`);
+    } else {
+      this.logger.log(`[EvolutionApiService] Evolution Webhook event '${webhook.event}' received for instance '${instanceName}'. No specific handler or missing data. Full Payload: ${JSON.stringify(webhook)}`);
     }
   }
 
+  /**
+   * Crea una nueva instancia en la base de datos y verifica sus credenciales con Evolution API.
+   * ✅ MEJORA: Más logs para depurar el estado inicial de la instancia.
+   */
   public async createEvolutionApiInstanceForUser(
     userId: string,
-    instanceId: string,
+    instanceId: string, // Esto es el GUID que se guarda en instanceGuid
     token: string,
-    instanceName: string,
+    instanceName: string, // Esto es el nombre que se usa como idInstance en Evolution API
   ): Promise<Instance> {
+    this.logger.log(`[EvolutionApiService] Attempting to create instance: '${instanceName}' for user: '${userId}'`);
     const existing = await this.prisma.getInstanceByNameAndToken(
       instanceName,
       token,
     );
     if (existing) {
+      this.logger.warn(`[EvolutionApiService] Instance '${instanceName}' with this name and token already exists.`);
       throw new HttpException(
         `An instance with this name and token already exists in WLink.`,
         HttpStatus.CONFLICT,
@@ -267,41 +281,48 @@ export class EvolutionApiService extends BaseAdapter<
     }
 
     try {
+      this.logger.log(`[EvolutionApiService] Validating credentials for '${instanceName}'...`);
       const isValid = await this.evolutionService.validateInstanceCredentials(
         token,
         instanceName,
       );
       if (!isValid) {
+        this.logger.error(`[EvolutionApiService] Invalid credentials for '${instanceName}'.`);
         throw new Error('Invalid credentials');
       }
+      this.logger.log(`[EvolutionApiService] Credentials valid for '${instanceName}'. Fetching initial status...`);
 
       const statusInfo = await this.evolutionService.getInstanceStatus(
         token,
         instanceName,
       );
       
-      const state = statusInfo?.instance?.state || 'close';
+      const state = statusInfo?.instance?.state || 'close'; // Evolution API uses 'open', 'connecting', 'close'
       const mappedState: InstanceState =
         state === 'open'
           ? 'authorized'
           : state === 'connecting'
           ? 'starting'
+          : state === 'qrcode' // Add qrcode state for initial mapping
+          ? 'qr_code'
           : 'notAuthorized';
+      
+      this.logger.log(`[EvolutionApiService] Initial status for '${instanceName}' from Evolution API: '${state}'. Mapped to: '${mappedState}'`);
 
       const newInstance = await this.prisma.createInstance({
-        idInstance: parseId(instanceName),
-        instanceGuid: instanceId,
+        idInstance: parseId(instanceName), // idInstance en tu DB es el nombre de Evolution API
+        instanceGuid: instanceId, // instanceGuid en tu DB es el ID real de la instancia
         apiTokenInstance: token,
         user: { connect: { id: userId } },
-        name: instanceName,
+        name: instanceName, // El campo 'name' en tu DB es el nombre de la instancia
         state: mappedState,
         settings: {},
       });
-
+      this.logger.log(`[EvolutionApiService] Instance '${instanceName}' created in DB with initial state: '${mappedState}'.`);
       return newInstance;
     } catch (error) {
       this.logger.error(
-        `Failed to verify or create instance ${instanceName}: ${error.message}`,
+        `[EvolutionApiService] Failed to verify or create instance '${instanceName}': ${error.message}. Stack: ${error.stack}`,
       );
       throw new HttpException(
         'Invalid credentials or API error',
@@ -330,4 +351,5 @@ export class EvolutionApiService extends BaseAdapter<
     );
   }
 }
+
 

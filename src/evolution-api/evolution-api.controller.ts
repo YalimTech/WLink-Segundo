@@ -33,22 +33,25 @@ export class EvolutionApiController {
   /**
    * Obtiene todas las instancias asociadas a una ubicación de GHL.
    * También refresca el estado de las instancias consultando la Evolution API.
+   * ✅ MEJORA: Más logs para depurar el estado de la instancia.
    */
   @Get()
   async getInstances(@Req() req: AuthReq) {
     const { locationId } = req;
     const instances = await this.prisma.getInstancesByUserId(locationId);
 
-    // Refrescar el estado de cada instancia consultando la Evolution API
     const refreshed = await Promise.all(
       instances.map(async (instance) => {
         try {
           const status = await this.evolutionService.getInstanceStatus(
             instance.apiTokenInstance,
-            instance.idInstance,
+            instance.idInstance, // idInstance es el "name" de Evolution API
           );
           // La Evolution API puede devolver 'state' o 'status' para el estado
           const state = status?.state ?? status?.status;
+
+          this.logger.log(`[getInstances] Fetched state for instance '${instance.name}' (Evolution ID: ${instance.idInstance}): ${state}`);
+
           if (state && state !== instance.state) {
             // Si el estado ha cambiado, actualizarlo en la base de datos
             await this.prisma.updateInstanceState(
@@ -56,9 +59,10 @@ export class EvolutionApiController {
               state as any, // Castear a 'any' si hay un ligero desajuste de tipos
             );
             instance.state = state as any; // Actualizar el objeto en memoria para la respuesta
+            this.logger.log(`[getInstances] DB updated for instance '${instance.name}'. New state: ${state}`);
           }
         } catch (err) {
-          this.logger.warn(`Failed to refresh state for instance ${instance.idInstance}: ${err.message}`);
+          this.logger.warn(`[getInstances] Failed to refresh state for instance '${instance.name}' (ID: ${instance.idInstance}): ${err.message}`);
           // Opcional: Podrías establecer un estado de error si la instancia no responde
           // await this.prisma.updateInstanceState(instance.idInstance, 'error');
         }
@@ -79,7 +83,6 @@ export class EvolutionApiController {
 
   /**
    * Agrega una nueva instancia (creada manualmente) al sistema.
-   * Requiere instanceId, token y instanceName en el cuerpo de la solicitud.
    */
   @Post()
   async createInstance(@Req() req: AuthReq, @Body() dto: CreateInstanceDto) {
@@ -180,7 +183,7 @@ export class EvolutionApiController {
 
   /**
    * Actualiza el nombre (nickname) de una instancia.
-   * Se asegura de que la instancia pertenezca al usuario autenticado.
+   * Nota: Este método también necesitaría ser ajustado si se usa desde el frontend.
    */
   @Patch(':instance')
   async updateInstance(
@@ -189,7 +192,8 @@ export class EvolutionApiController {
     @Req() req: AuthReq,
   ) {
     const { locationId } = req;
-    const instanceData = await this.prisma.getInstance(instance); // Asumiendo que getInstance puede buscar por instanceGuid
+    // Asumiendo que getInstance puede buscar por instanceGuid o idInstance string
+    const instanceData = await this.prisma.getInstance(instance); 
     if (!instanceData || instanceData.userId !== locationId) {
       throw new HttpException('Instance not found or not authorized for this location', HttpStatus.FORBIDDEN);
     }

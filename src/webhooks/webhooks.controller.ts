@@ -14,7 +14,7 @@ import {
 } from '@nestjs/common';
 import { Response, Request } from 'express';
 import { EvolutionApiService } from '../evolution-api/evolution-api.service';
-import { ConfigService } from '@nestjs/config'; // Mantenemos esta importación de @nestjs/config
+import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../prisma/prisma.service';
 import { GhlWebhookDto } from '../evolution-api/dto/ghl-webhook.dto';
 import { EvolutionWebhook, InstanceState } from '../types';
@@ -47,6 +47,7 @@ export class WebhooksController {
     res.status(HttpStatus.OK).send('Webhook received');
 
     try {
+      // payload.instance ya es el instanceName de Evolution API
       if (!payload.instance) {
         this.logger.warn('[WebhooksController] Webhook received without an instance name. Ignoring.');
         return;
@@ -117,23 +118,28 @@ export class WebhooksController {
         throw new BadRequestException('Location ID is missing from GHL webhook.');
       }
 
-      let instanceId: string | null = null;
+      // CAMBIO: La variable extraída de los tags será 'instanceName'
+      let instanceName: string | null = null; 
       const contact = await this.evolutionApiService.getGhlContactByPhone(
         locationId,
         ghlWebhook.phone,
       );
 
       if (contact?.tags) {
-        instanceId = this.extractInstanceIdFromTags(contact.tags);
+        // CAMBIO: Llamar al método renombrado
+        instanceName = this.extractInstanceNameFromTags(contact.tags); 
       }
 
-      if (!instanceId) {
+      // CAMBIO: Usar 'instanceName'
+      if (!instanceName) {
         this.logger.warn(
           `[WebhooksController] No instance tag found for contact ${ghlWebhook.phone}. Using fallback.`,
         );
-        const instances = await this.prisma.getInstancesByUserId(locationId);
+        // CAMBIO: Usar getInstancesByLocationId
+        const instances = await this.prisma.getInstancesByLocationId(locationId); 
         if (instances.length > 0) {
-          instanceId = instances[0].idInstance;
+          // CAMBIO: Acceder a 'instanceName' en lugar de 'idInstance'
+          instanceName = instances[0].instanceName; 
         } else {
           this.logger.error(
             `[WebhooksController] No instances found for location ${locationId}. Cannot send message.`,
@@ -146,9 +152,10 @@ export class WebhooksController {
         ghlWebhook.type === 'SMS' &&
         (ghlWebhook.message || ghlWebhook.attachments?.length)
       ) {
+        // CAMBIO: Usar 'instanceName'
         await this.evolutionApiService.handlePlatformWebhook(
           ghlWebhook,
-          instanceId!,
+          instanceName!,
         );
       }
       this.logger.log(`[WebhooksController] GHL Webhook processed successfully for location ${locationId}, Message ID: ${messageId}`); // LOG
@@ -169,9 +176,11 @@ export class WebhooksController {
     }
   }
 
-  private extractInstanceIdFromTags(tags: string[]): string | null {
+  // CAMBIO: Renombrado de 'extractInstanceIdFromTags' a 'extractInstanceNameFromTags'
+  private extractInstanceNameFromTags(tags: string[]): string | null {
     if (!tags || tags.length === 0) return null;
     const instanceTag = tags.find((tag) => tag.startsWith('whatsapp-instance-'));
-    return instanceTag ? instanceTag.replace('whatsapp-instance-', '') : null;
+    // El valor después de 'whatsapp-instance-' es el instanceName
+    return instanceTag ? instanceTag.replace('whatsapp-instance-', '') : null; 
   }
 }

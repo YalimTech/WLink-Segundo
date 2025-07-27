@@ -15,15 +15,16 @@ export class GhlExternalAuthPayloadDto {
   @IsArray()
   @ArrayNotEmpty()
   @IsString({ each: true })
-  locationId?: string[];  // Se procesará como array, y luego tú tomas el primero manualmente
+  locationId?: string[]; // Se procesará como array, y luego tú tomas el primero manualmente
 
+  // CAMBIO: Renombrado de 'instance_id' a 'instanceId' para concordancia
   @ValidateIf((_, value) => value !== undefined)
   @IsOptional()
   @IsString()
   @Matches(/^[a-zA-Z0-9\-]+$/, {
-    message: 'instance_id must contain only letters, numbers, or dashes',
+    message: 'instanceId must contain only letters, numbers, or dashes', // Actualizado el mensaje
   })
-  instance_id?: string;
+  instanceId?: string; // Renombrado
 
   @ValidateIf((_, value) => value !== undefined)
   @IsOptional()
@@ -33,4 +34,3 @@ export class GhlExternalAuthPayloadDto {
   })
   api_token_instance?: string;
 }
-

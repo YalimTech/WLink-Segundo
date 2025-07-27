@@ -76,7 +76,7 @@ export class CustomPageController {
       }
 
       // CAMBIO: findUser ahora espera locationId y el User model ahora tiene locationId
-      const user = await this.prisma.findUser(locationId); 
+      const user = await this.prisma.findUser(locationId);
       console.log('User found in DB:', user ? user.locationId : 'None'); // CAMBIO: user.id a user.locationId
 
       return res.json({
@@ -100,18 +100,6 @@ export class CustomPageController {
    * Genera el HTML completo para la página de gestión de instancias de WhatsApp.
    * Incluye la aplicación React con toda la lógica de UI y llamadas a la API.
    *
-   * ✅ Cambios para que la estructura sea casi igual a la imagen de ejemplo:
-   * - Se añadió la sección "Connection Status" con datos mock.
-   * - El nombre de la instancia en la tarjeta ya no es editable.
-   * - Se añadió el botón "Open Console".
-   * - El botón "Logout" se muestra si la instancia está 'authorized', de lo contrario, se muestra "Connect".
-   * - El estado de la instancia se muestra de forma más prominente.
-   * - Se ajustaron los estilos para coincidir visualmente con la imagen.
-   * - Se mantuvo el sistema de modales personalizado.
-   * - Se mejoró la frecuencia de polling del frontend para una mejor sincronización del estado.
-   * - Se mejoró el manejo del QR para asegurar la visualización correcta.
-   * - Se integran los datos reales del usuario de GHL en la sección "Connection Status".
-   * - NUEVA CARACTERÍSTICA: Se permite editar el "customName" de la instancia desde el panel.
    */
   private generateCustomPageHTML(): string {
     return `
@@ -187,15 +175,15 @@ export class CustomPageController {
               const [form, setForm] = useState({ instanceName: '', token: '', customName: '' }); 
               const [qr, setQr] = useState('');
               const [showQr, setShowQr] = useState(false);
-              const [qrLoading, setQrLoading] = useState(false); // Estado para el loading del QR
-              const pollRef = useRef(null); // Ref para el intervalo de polling del QR
-              const mainIntervalRef = useRef(null); // Ref para el intervalo de polling principal
-              const qrInstanceIdRef = useRef(null); // Para guardar el ID de la instancia cuyo QR se está mostrando (DB ID)
-              const qrCodeDivRef = useRef(null); // Ref para el div donde se renderizará el QR
-              const [modal, setModal] = useState({ show: false, message: '', type: '', onConfirm: null, onCancel: null }); // Estado para el modal
-              const [ghlUser, setGhlUser] = useState({ name: 'Loading...', email: 'Loading...', hasTokens: false }); // Estado para los datos del usuario GHL
-              const [editingInstanceId, setEditingInstanceId] = useState(null); // Estado para saber qué instancia se está editando (DB ID)
-              const [editingCustomName, setEditingCustomName] = useState(''); // CAMBIO: 'editingInstanceName' a 'editingCustomName'
+              const [qrLoading, setQrLoading] = useState(false); 
+              const pollRef = useRef(null); 
+              const mainIntervalRef = useRef(null); 
+              const qrInstanceIdRef = useRef(null); 
+              const qrCodeDivRef = useRef(null); 
+              const [modal, setModal] = useState({ show: false, message: '', type: '', onConfirm: null, onCancel: null }); 
+              const [ghlUser, setGhlUser] = useState({ name: 'Loading...', email: 'Loading...', hasTokens: false }); 
+              const [editingInstanceId, setEditingInstanceId] = useState(null); 
+              const [editingCustomName, setEditingCustomName] = useState(''); 
 
               // Función para mostrar el modal personalizado
               const showModal = (message, type = 'info', onConfirm = null, onCancel = null) => {
@@ -224,8 +212,8 @@ export class CustomPageController {
                 if (locationId) {
                   loadInstances();
                   // Configura el polling principal para refrescar el estado de las instancias cada 3 segundos
-                  if (mainIntervalRef.current) clearInterval(mainIntervalRef.current); // Limpiar si ya existe
-                  mainIntervalRef.current = setInterval(loadInstances, 3000); // Poll every 3 seconds
+                  if (mainIntervalRef.current) clearInterval(mainIntervalRef.current); 
+                  mainIntervalRef.current = setInterval(loadInstances, 3000); 
                 }
                 // Limpieza de intervalos al desmontar el componente
                 return () => {
@@ -269,13 +257,13 @@ export class CustomPageController {
                         qrCodeDivRef.current.innerHTML = '<p class="text-red-500">No se pudo cargar el código QR. Intente de nuevo.</p>';
                     }
                 }
-              }, [showQr, qr, qrLoading]); // Añadido qrLoading a las dependencias
+              }, [showQr, qr, qrLoading]); 
 
               // Función genérica para hacer solicitudes a la API con manejo de errores y headers
               async function makeApiRequest(path, options = {}) {
                 const headers = {
                   'Content-Type': 'application/json',
-                  'X-GHL-Context': encrypted, // Asegúrate de enviar el contexto en cada petición
+                  'X-GHL-Context': encrypted, 
                   ...options.headers,
                 };
 
@@ -284,12 +272,10 @@ export class CustomPageController {
                 try {
                   data = await response.json();
                 } catch (e) {
-                  // CORRECCIÓN: Usar concatenación de strings para logs
                   console.error('Error parsing JSON from ' + path + '. Status: ' + response.status + ' ' + response.statusText, e, response);
-                  throw new Error(response.statusText || 'Invalid JSON response from server');
+                  throw new Error(data.message || response.statusText || 'Invalid JSON response from server');
                 }
                 if (!response.ok) {
-                  // CORRECCIÓN: Usar concatenación de strings para logs
                   console.error('API request to ' + path + ' failed. Status: ' + response.status + '. Response:', data);
                   throw new Error(data.message || 'API request failed');
                 }
@@ -307,7 +293,7 @@ export class CustomPageController {
                   setGhlUser({
                     name: res.userData.fullName || (res.userData.firstName || '') + ' ' + (res.userData.lastName || '') || 'Unknown User',
                     email: res.userData.email || 'N/A',
-                    hasTokens: res.user ? res.user.hasTokens : false // Usa el hasTokens del backend
+                    hasTokens: res.user ? res.user.hasTokens : false 
                   });
                   console.log('User data decrypted and locationId set:', res.locationId);
                 } catch (err) {
@@ -324,15 +310,14 @@ export class CustomPageController {
                   console.log('Main polling: Instances loaded:', data.instances);
                   // NUEVO LOG: Mostrar el estado de cada instancia individualmente
                   data.instances.forEach(inst => {
-                      // CAMBIO: idInstance a instanceName
-                      console.log('  Instance ' + inst.instanceName + ' (ID: ' + inst.id + ') state: ' + inst.state + ' Custom Name: ' + inst.customName);
+                      // CAMBIO: idInstance a instanceName; instanceGuid a instanceId
+                      console.log('  Instance ' + inst.instanceName + ' (DB ID: ' + inst.id + ') state: ' + inst.state + ' Custom Name: ' + inst.customName);
                   });
 
                   // Lógica para cerrar el modal QR desde el polling principal
                   if (showQr && qrInstanceIdRef.current) {
                     const currentInstance = data.instances.find(inst => String(inst.id) === String(qrInstanceIdRef.current));
                     if (currentInstance && currentInstance.state !== 'qr_code' && currentInstance.state !== 'starting') {
-                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('Main polling: Closing QR modal as state is now ' + currentInstance.state + '.');
                       clearInterval(pollRef.current);
                       pollRef.current = null;
@@ -367,9 +352,9 @@ export class CustomPageController {
                   // CAMBIO: Payload ahora usa 'instanceName' y 'token' directamente del formulario
                   const payload = { 
                     locationId, 
-                    instanceName: form.instanceName, 
-                    token: form.token, 
-                    customName: form.customName 
+                    instanceName: form.instanceName, // Usar form.instanceName
+                    token: form.token,             // Usar form.token
+                    customName: form.customName    // Usar form.customName
                   };
                   await makeApiRequest('/api/instances', {
                     method: 'POST',
@@ -399,11 +384,9 @@ export class CustomPageController {
                     setInstances(data.instances); // Actualizar la lista de instancias para reflejar el estado más reciente
 
                     if (updatedInstance) {
-                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('QR polling for ' + instanceId + ': Fetched state ' + updatedInstance.state);
                       // Si el estado NO es 'qr_code' Y NO es 'starting', cerramos el modal y el polling.
                       if (updatedInstance.state !== 'qr_code' && updatedInstance.state !== 'starting') {
-                        // CORRECCIÓN: Usar concatenación de strings para logs
                         console.log('QR polling: State ' + updatedInstance.state + ' detected, closing QR modal.');
                         clearInterval(pollRef.current);
                         pollRef.current = null;
@@ -417,7 +400,6 @@ export class CustomPageController {
                         }
                       }
                     } else {
-                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('QR polling: Instance ' + instanceId + ' not found in fetched data, stopping polling and closing QR.');
                       clearInterval(pollRef.current);
                       pollRef.current = null;
@@ -435,48 +417,43 @@ export class CustomPageController {
                     qrInstanceIdRef.current = null;
                     showModal('Error al verificar estado del QR. Intente de nuevo.', 'error');
                   }
-                }, 2000); // Sondea cada 2 segundos para una respuesta rápida
+                }, 2000); 
               }
 
               // Conecta una instancia (obtiene y muestra el QR)
               async function connectInstance(id) {
-                setQrLoading(true); // Iniciar loading
-                setQr(''); // Limpiar cualquier QR previo
-                setShowQr(true); // Mostrar el contenedor del QR
-                qrInstanceIdRef.current = id; // Asignar el ID de la instancia al ref para el QR
+                setQrLoading(true); 
+                setQr(''); 
+                setShowQr(true); 
+                qrInstanceIdRef.current = id; 
 
                 try {
-                  // CORRECCIÓN: Usar concatenación de strings para logs
                   console.log('Attempting to fetch QR for instance ID: ' + id);
                   const res = await makeApiRequest('/api/qr/' + id);
-                  // CORRECCIÓN: Usar concatenación de strings para logs
                   console.log('QR API response for ' + id + ':', res);
                   console.log('QR response type: ' + res.type + ', data starts with: ' + (res.data ? res.data.substring(0, 50) : 'N/A'));
 
 
                   if (res.type === 'qr') {
-                    // Asegurar que la data del QR tenga el prefijo data:image/png;base64,
                     const finalQrData = res.data.startsWith('data:image') ? res.data : 'data:image/png;base64,' + res.data;
                     setQr(finalQrData);
                     console.log('QR type received. Setting QR data. Starts with data:image: ' + finalQrData.startsWith('data:image'));
                   } else if (res.type === 'code') {
-                    // Si Evolution API devuelve un pairing code, lo convertimos a QR
                     console.log('Code type received. Generating QR from text: ' + res.data);
                     const qrImage = await generateQrFromString(res.data);
                     setQr(qrImage);
                   } else {
                     throw new Error('Unexpected QR response format. Type was: ' + res.type);
                   }
-                  setQrLoading(false); // Detener loading
+                  setQrLoading(false); 
 
-                  // Iniciar el sondeo para el estado de la instancia inmediatamente después de obtener el QR
                   startPolling(id);
 
                 } catch (err) {
-                  setQrLoading(false); // Detener loading en caso de error
+                  setQrLoading(false); 
                   console.error('Error obtaining QR:', err);
                   setQr('');
-                  setShowQr(false); // Asegurarse de que el modal se cierre si la petición de QR falla.
+                  setShowQr(false); 
                   qrInstanceIdRef.current = null;
                   showModal('Error obteniendo QR: ' + err.message, 'error');
                   if (pollRef.current) {
@@ -502,7 +479,6 @@ export class CustomPageController {
                     colorLight : "#ffffff",
                     correctLevel : QRCode.CorrectLevel.H
                   });
-                  // Pequeño retraso para asegurar que el QR se renderiza en el canvas/img antes de capturar
                   setTimeout(() => {
                     const img = container.querySelector('img') || container.querySelector('canvas');
                     if (img) {
@@ -522,22 +498,20 @@ export class CustomPageController {
                 showModal(
                   '¿Estás seguro de que quieres desconectar esta instancia? Esto cerrará la sesión de WhatsApp y requerirá un nuevo escaneo de QR para reconectar.',
                   'confirm',
-                  async () => { // onConfirm callback
-                    closeModal(); // Cerrar el modal de confirmación
+                  async () => { 
+                    closeModal(); 
                     try {
-                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('Attempting to logout instance ID: ' + id);
                       await makeApiRequest('/api/instances/' + id + '/logout', { method: 'DELETE' });
-                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('Instance ' + id + ' logout command sent successfully. Reloading instances...');
                       showModal('Comando de desconexión de instancia enviado. El estado se actualizará en breve y requerirá un nuevo escaneo.', 'success');
-                      loadInstances(); // Recargar instancias para reflejar el cambio de estado
+                      loadInstances(); 
                     } catch (err) {
                       console.error('Error disconnecting instance:', err);
                       showModal('Error al desconectar: ' + err.message, 'error');
                     }
                   },
-                  () => closeModal() // onCancel callback
+                  () => closeModal() 
                 );
               }
 
@@ -546,22 +520,20 @@ export class CustomPageController {
                 showModal(
                   '¿Estás seguro de que quieres ELIMINAR esta instancia? Esta acción es permanente y borrará la instancia de Evolution API y de la base de datos.',
                   'confirm',
-                  async () => { // onConfirm callback
+                  async () => { 
                     closeModal();
                     try {
-                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('Attempting to delete instance ID: ' + id);
                       await makeApiRequest('/api/instances/' + id, { method: 'DELETE' });
-                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('Instance ' + id + ' delete command sent. Reloading instances...');
                       showModal('Instancia eliminada exitosamente!', 'success');
-                      loadInstances(); // Recargar instancias después de eliminar
+                      loadInstances(); 
                     } catch (err) {
                       console.error('Error deleting instance:', err);
                       showModal('Error al eliminar instancia: ' + err.message, 'error');
                     }
                   },
-                  () => closeModal() // onCancel callback
+                  () => closeModal() 
                 );
               }
 
@@ -579,9 +551,9 @@ export class CustomPageController {
                     body: JSON.stringify({ customName: editingCustomName }), 
                   });
                   showModal('Nombre de instancia actualizado exitosamente!', 'success');
-                  setEditingInstanceId(null); // Salir del modo de edición
+                  setEditingInstanceId(null); 
                   setEditingCustomName('');
-                  loadInstances(); // Recargar instancias para reflejar el cambio
+                  loadInstances(); 
                 } catch (err) {
                   console.error('Error al actualizar el nombre de la instancia:', err);
                   showModal('Error al actualizar el nombre: ' + err.message, 'error');
@@ -597,9 +569,6 @@ export class CustomPageController {
               // Placeholder para la función Open Console
               const openConsole = (instanceId) => {
                 showModal('Abriendo consola para la instancia: ' + instanceId, 'info');
-                // Aquí iría la lógica real para abrir la consola de la instancia,
-                // por ejemplo, redirigir a una URL específica de Evolution API.
-                // window.open('https://your-evolution-api-console-url/' + instanceId, '_blank');
               };
 
 
@@ -609,7 +578,7 @@ export class CustomPageController {
                   <div className="flex flex-col items-center justify-center mb-6">
                     <img src="https://placehold.co/60x60/00FF00/FFFFFF?text=G" alt="Logo" className="h-16 w-16 mb-2" />
                     <h1 className="text-3xl font-bold text-center text-gray-800">WhatsApp Integration</h1>
-                    <p className="text-gray-500 text-center">Manage your GREEN-API instances with ease</p>
+                    <p className="text-gray-500 text-center">Manage your instances with ease</p> {/* CAMBIO: Removida mención a "GREEN-API" */}
                   </div>
 
                   {/* Sección de Connection Status */}
@@ -688,7 +657,7 @@ export class CustomPageController {
                                 </p>
                               </div>
                             )}
-                            <p className="text-sm text-gray-500">Created: {new Date(inst.createdAt).toLocaleDateString()}</p>
+                            <p className="text-sm text-gray-500">Created: {new Date(inst.createdAt).toLocaleDateString()}</p> 
                             <span
                               className={
                                 "mt-2 inline-block text-xs px-3 py-1 rounded-full font-medium " +
@@ -761,38 +730,42 @@ export class CustomPageController {
                     </h2>
                     <form onSubmit={createInstance} className="space-y-4">
                       <div>
-                        <label htmlFor="instanceName" className="block text-sm font-medium text-gray-700">Instance ID</label>
+                        {/* CAMBIO: Renombrado a 'Instance Name' para el ID único de Evolution API */}
+                        <label htmlFor="instanceName" className="block text-sm font-medium text-gray-700">Instance Name</label>
                         <input
                           type="text"
-                          id="instanceName" // CAMBIO: ID del input a instanceName
+                          id="instanceName" 
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.instanceName} // CAMBIO: Value a form.instanceName
-                          onChange={(e) => setForm({ ...form, instanceName: e.target.value })} // CAMBIO: onChange a instanceName
+                          value={form.instanceName} 
+                          onChange={(e) => setForm({ ...form, instanceName: e.target.value })} 
                           placeholder="e.g., 1234567890"
-                          required
+                          required {/* CAMBIO: Este campo es obligatorio */}
                         />
                       </div>
                       <div>
+                        {/* CAMBIO: Etiqueta a 'API Token' */}
                         <label htmlFor="token" className="block text-sm font-medium text-gray-700">API Token</label>
                         <input
                           type="text"
-                          id="token" // CAMBIO: ID del input a token
+                          id="token" 
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.token} // CAMBIO: Value a form.token
-                          onChange={(e) => setForm({ ...form, token: e.target.value })} // CAMBIO: onChange a token
-                          placeholder="Your GREEN-API token"
-                          required
+                          value={form.token} 
+                          onChange={(e) => setForm({ ...form, token: e.target.value })} 
+                          placeholder="Your token" {/* CAMBIO: Removida mención a "GREEN-API" */}
+                          required {/* CAMBIO: Este campo es obligatorio */}
                         />
                       </div>
                       <div>
-                        <label htmlFor="customName" className="block text-sm font-medium text-gray-700">Instance Name (optional)</label>
+                        {/* CAMBIO: Etiqueta a 'Instance Custom Name' para distinguirlo, y ahora es obligatorio */}
+                        <label htmlFor="customName" className="block text-sm font-medium text-gray-700">Instance Custom Name</label> 
                         <input
                           type="text"
-                          id="customName"
+                          id="customName" 
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.customName}
-                          onChange={(e) => setForm({ ...form, customName: e.target.value })}
-                          // Removed 'required' as per the label "optional"
+                          value={form.customName} 
+                          onChange={(e) => setForm({ ...form, customName: e.target.value })} 
+                          placeholder="e.g., Sales Team WhatsApp"
+                          required {/* CAMBIO: Este campo ahora es obligatorio */}
                         />
                       </div>
                       <button

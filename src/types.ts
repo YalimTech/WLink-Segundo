@@ -16,30 +16,30 @@ export type InstanceState =
 export interface User {
   id: string;
   companyId?: string | null;
-  locationId?: string | null; // Aunque 'id' es locationId, a veces el payload de GHL lo repite.
-  firstName?: string | null; // Nuevo: Campo para el nombre del usuario de GHL
-  lastName?: string | null;  // Nuevo: Campo para el apellido del usuario de GHL
-  email?: string | null;     // Nuevo: Campo para el email del usuario de GHL
+  locationId?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  email?: string | null;
   accessToken?: string | null;
   refreshToken?: string | null;
   tokenExpiresAt?: Date | null;
   instances?: Instance[];
   createdAt: Date;
-  updatedAt: Date; // Asegúrate de que este campo exista en tu schema.prisma también.
+  updatedAt: Date;
 }
 
 export interface Instance {
   id: bigint;
-  idInstance: string;
-  name: string;
+  idInstance: string; // Identificador único de Evolution API (no modificable)
+  instanceGuid?: string | null;
+  customName?: string | null; // CAMBIO: Renombrado de 'name' a 'customName'
   apiTokenInstance: string;
-  instanceGuid?: string | null; // Puede ser opcional si no siempre se usa
-  state?: InstanceState | null; // Puede ser opcional si no siempre tiene un estado
+  state?: InstanceState | null;
   settings: any;
   userId: string;
   user?: User;
   createdAt: Date;
-  updatedAt?: Date; // Si lo agregaste en schema.prisma, inclúyelo aquí
+  updatedAt: Date; // Asegúrate de que este campo exista en tu schema.prisma también.
 }
 
 // =================================================================
@@ -48,22 +48,20 @@ export interface Instance {
 
 export interface CreateInstanceDto {
   locationId: string;
-  instanceId: string;
+  instanceId: string; // Corresponde al idInstance de Evolution API
   token: string;
-  instanceName: string;
+  instanceName: string; // CAMBIO: Este campo ahora se usará para el 'customName'
 }
 
 export interface UpdateInstanceDto {
-  name: string;
+  customName: string; // CAMBIO: Renombrado de 'name' a 'customName'
 }
 
 // =================================================================
 // Tipos para creación y actualización en Prisma
 // =================================================================
 
-// UserCreateData ahora puede incluir firstName, lastName, email
 export type UserCreateData = Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'instances' | 'hasTokens'> & { id?: string };
-// UserUpdateData ahora es más flexible para actualizar campos parciales
 export type UserUpdateData = Partial<Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'instances' | 'hasTokens'>>;
 
 
@@ -91,7 +89,6 @@ export interface EvolutionWebhook {
   data: any;
   sender?: string;
   destination?: string;
-  // ✅ CORRECCIÓN: Permitir que el timestamp sea string o number para mayor flexibilidad.
   timestamp?: string | number;
   server_url?: string;
 }
@@ -105,20 +102,16 @@ export interface AuthReq extends Request {
   userData?: GhlUserData;
 }
 
-// ✅ ACTUALIZACIÓN: GhlUserData para reflejar los datos que recibes de GHL
 export interface GhlUserData {
   userId: string;
   companyId: string;
   type: 'location' | 'agency';
   activeLocation?: string;
   locationId?: string;
-  // Añadidos campos que se pueden obtener del usuario de GHL
   firstName?: string;
   lastName?: string;
   email?: string;
-  fullName?: string; // GHL a veces envía fullName
-  // Otros campos que GHL pueda devolver en el payload inicial o al consultar el usuario
-  // ...
+  fullName?: string;
 }
 
 export interface GhlPlatformAttachment {
@@ -161,4 +154,5 @@ export interface GhlContact {
 export interface GhlContactUpsertResponse {
   contact: GhlContact;
 }
+
 

@@ -104,6 +104,7 @@ export class CustomPageController {
    * - Lógica de logout con botón condicional.
    * - Indicador de carga para el QR.
    * - Refinamiento en el manejo de estados y polling.
+   * - CORRECCIÓN: Escapado de template literals en console.log para evitar errores de build.
    */
   private generateCustomPageHTML(): string {
     return `
@@ -263,11 +264,13 @@ export class CustomPageController {
                 try {
                   data = await response.json();
                 } catch (e) {
-                  console.error(`Error parsing JSON from ${path}. Status: ${response.status} ${response.statusText}`, e, response);
+                  // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                  console.error(`Error parsing JSON from \${path}. Status: \${response.status} \${response.statusText}`, e, response);
                   throw new Error(response.statusText || 'Invalid JSON response from server');
                 }
                 if (!response.ok) {
-                  console.error(`API request to ${path} failed. Status: ${response.status}. Response:`, data);
+                  // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                  console.error(`API request to \${path} failed. Status: \${response.status}. Response:`, data);
                   throw new Error(data.message || 'API request failed');
                 }
                 return data;
@@ -297,7 +300,8 @@ export class CustomPageController {
                   if (showQr && qrInstanceIdRef.current) {
                     const currentInstance = data.instances.find(inst => String(inst.id) === String(qrInstanceIdRef.current));
                     if (currentInstance && currentInstance.state !== 'qr_code' && currentInstance.state !== 'starting') {
-                      console.log(`Main polling: Closing QR modal as state is now ${currentInstance.state}.`);
+                      // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                      console.log(`Main polling: Closing QR modal as state is now \${currentInstance.state}.`);
                       clearInterval(pollRef.current);
                       pollRef.current = null;
                       setShowQr(false);
@@ -356,10 +360,12 @@ export class CustomPageController {
                     setInstances(data.instances); // Actualizar la lista de instancias para reflejar el estado más reciente
 
                     if (updatedInstance) {
-                      console.log(`QR polling for ${instanceId}: Fetched state ${updatedInstance.state}`);
+                      // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                      console.log(`QR polling for \${instanceId}: Fetched state \${updatedInstance.state}`);
                       // Si el estado NO es 'qr_code' Y NO es 'starting', cerramos el modal y el polling.
                       if (updatedInstance.state !== 'qr_code' && updatedInstance.state !== 'starting') {
-                        console.log(`QR polling: State ${updatedInstance.state} detected, closing QR modal.`);
+                        // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                        console.log(`QR polling: State \${updatedInstance.state} detected, closing QR modal.`);
                         clearInterval(pollRef.current);
                         pollRef.current = null;
                         setShowQr(false);
@@ -372,8 +378,8 @@ export class CustomPageController {
                         }
                       }
                     } else {
-                      // Si la instancia ya no se encuentra (ej. fue eliminada del backend)
-                      console.log(`QR polling: Instance ${instanceId} not found in fetched data, stopping polling and closing QR.`);
+                      // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                      console.log(`QR polling: Instance \${instanceId} not found in fetched data, stopping polling and closing QR.`);
                       clearInterval(pollRef.current);
                       pollRef.current = null;
                       setShowQr(false);
@@ -401,9 +407,11 @@ export class CustomPageController {
                 qrInstanceIdRef.current = id; // Asignar el ID de la instancia al ref para el QR
 
                 try {
-                  console.log(`Attempting to fetch QR for instance ID: ${id}`);
+                  // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                  console.log(`Attempting to fetch QR for instance ID: \${id}`);
                   const res = await makeApiRequest('/api/qr/' + id);
-                  console.log(`QR API response for ${id}:`, res);
+                  // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                  console.log(`QR API response for \${id}:`, res);
 
                   if (res.type === 'qr') {
                     setQr(res.data); // Asume que res.data ya es un data:image/png;base64
@@ -470,9 +478,11 @@ export class CustomPageController {
                   async () => { // onConfirm callback
                     closeModal(); // Cerrar el modal de confirmación
                     try {
-                      console.log(`Attempting to logout instance ID: ${id}`);
+                      // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                      console.log(`Attempting to logout instance ID: \${id}`);
                       await makeApiRequest('/api/instances/' + id + '/logout', { method: 'DELETE' });
-                      console.log(`Instance ${id} logout command sent successfully. Reloading instances...`);
+                      // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                      console.log(`Instance \${id} logout command sent successfully. Reloading instances...`);
                       showModal('Comando de desconexión de instancia enviado. El estado se actualizará en breve y requerirá un nuevo escaneo.', 'success');
                       loadInstances(); // Recargar instancias para reflejar el cambio de estado
                     } catch (err) {
@@ -492,9 +502,11 @@ export class CustomPageController {
                   async () => { // onConfirm callback
                     closeModal();
                     try {
-                      console.log(`Attempting to delete instance ID: ${id}`);
+                      // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                      console.log(`Attempting to delete instance ID: \${id}`);
                       await makeApiRequest('/api/instances/' + id, { method: 'DELETE' });
-                      console.log(`Instance ${id} delete command sent. Reloading instances...`);
+                      // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
+                      console.log(`Instance \${id} delete command sent. Reloading instances...`);
                       showModal('Instancia eliminada exitosamente!', 'success');
                       loadInstances(); // Recargar instancias después de eliminar
                     } catch (err) {

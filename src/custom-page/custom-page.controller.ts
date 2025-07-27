@@ -109,7 +109,8 @@ export class CustomPageController {
    * - Se mantuvo el sistema de modales personalizado.
    * - Se mejoró la frecuencia de polling del frontend para una mejor sincronización del estado.
    * - Se mejoró el manejo del QR para asegurar la visualización correcta.
-   * - NUEVA CORRECCIÓN: Se integran los datos reales del usuario de GHL en la sección "Connection Status".
+   * - Se integran los datos reales del usuario de GHL en la sección "Connection Status".
+   * - NUEVA CARACTERÍSTICA: Se permite editar el "customName" de la instancia desde el panel.
    */
   private generateCustomPageHTML(): string {
     return `
@@ -187,7 +188,7 @@ export class CustomPageController {
               const [locationId, setLocationId] = useState(null);
               const [encrypted, setEncrypted] = useState(null);
               const [instances, setInstances] = useState([]);
-              const [form, setForm] = useState({ instanceId: '', token: '', instanceName: '' });
+              const [form, setForm] = useState({ instanceId: '', token: '', customName: '' }); // CAMBIO: 'instanceName' a 'customName'
               const [qr, setQr] = useState('');
               const [showQr, setShowQr] = useState(false);
               const [qrLoading, setQrLoading] = useState(false); // Estado para el loading del QR
@@ -197,6 +198,8 @@ export class CustomPageController {
               const qrCodeDivRef = useRef(null); // Ref para el div donde se renderizará el QR
               const [modal, setModal] = useState({ show: false, message: '', type: '', onConfirm: null, onCancel: null }); // Estado para el modal
               const [ghlUser, setGhlUser] = useState({ name: 'Loading...', email: 'Loading...', hasTokens: false }); // Estado para los datos del usuario GHL
+              const [editingInstanceId, setEditingInstanceId] = useState(null); // Estado para saber qué instancia se está editando
+              const [editingCustomName, setEditingCustomName] = useState(''); // CAMBIO: 'editingInstanceName' a 'editingCustomName'
 
               // Función para mostrar el modal personalizado
               const showModal = (message, type = 'info', onConfirm = null, onCancel = null) => {
@@ -325,7 +328,7 @@ export class CustomPageController {
                   console.log('Main polling: Instances loaded:', data.instances);
                   // NUEVO LOG: Mostrar el estado de cada instancia individualmente
                   data.instances.forEach(inst => {
-                      console.log('  Instance ' + inst.name + ' (ID: ' + inst.id + ') state: ' + inst.state);
+                      console.log('  Instance ' + inst.idInstance + ' (ID: ' + inst.id + ') state: ' + inst.state + ' Custom Name: ' + inst.customName);
                   });
 
                   // Lógica para cerrar el modal QR desde el polling principal
@@ -370,7 +373,7 @@ export class CustomPageController {
                     body: JSON.stringify(payload),
                   });
                   showModal('Instancia creada exitosamente!', 'success');
-                  setForm({ instanceId: '', token: '', instanceName: '' });
+                  setForm({ instanceId: '', token: '', customName: '' }); // CAMBIO: 'instanceName' a 'customName'
                   loadInstances(); // Recargar instancias después de crear una nueva
                 } catch (err) {
                   console.error('Error creating instance:', err);
@@ -558,6 +561,35 @@ export class CustomPageController {
                 );
               }
 
+              // Función para iniciar la edición del nombre personalizado de una instancia
+              const startEditingName = (instanceId, currentCustomName) => { // CAMBIO: 'currentName' a 'currentCustomName'
+                setEditingInstanceId(instanceId);
+                setEditingCustomName(currentCustomName); // CAMBIO: 'setEditingInstanceName' a 'setEditingCustomName'
+              };
+
+              // Función para guardar el nombre personalizado editado de una instancia
+              const saveEditedName = async (instanceId) => {
+                try {
+                  await makeApiRequest('/api/instances/' + instanceId, {
+                    method: 'PATCH',
+                    body: JSON.stringify({ customName: editingCustomName }), // CAMBIO: 'name' a 'customName'
+                  });
+                  showModal('Nombre de instancia actualizado exitosamente!', 'success');
+                  setEditingInstanceId(null); // Salir del modo de edición
+                  setEditingCustomName('');
+                  loadInstances(); // Recargar instancias para reflejar el cambio
+                } catch (err) {
+                  console.error('Error al actualizar el nombre de la instancia:', err);
+                  showModal('Error al actualizar el nombre: ' + err.message, 'error');
+                }
+              };
+
+              // Función para cancelar la edición del nombre personalizado de una instancia
+              const cancelEditingName = () => {
+                setEditingInstanceId(null);
+                setEditingCustomName('');
+              };
+
               // Placeholder para la función Open Console
               const openConsole = (instanceId) => {
                 showModal('Abriendo consola para la instancia: ' + instanceId, 'info');
@@ -611,9 +643,47 @@ export class CustomPageController {
                       {instances.map((inst) => (
                         <div key={inst.id} className="flex flex-col sm:flex-row justify-between items-center p-4 border border-gray-200 rounded-xl bg-white shadow-sm">
                           <div className="text-center sm:text-left mb-3 sm:mb-0">
-                            <p className="font-semibold text-lg text-gray-800">{inst.name || 'Unnamed Instance'}</p>
+                            {/* Mostrar idInstance como el ID único */}
                             <p className="text-sm text-gray-500">Instance ID: {inst.idInstance || inst.guid || 'N/A'}</p>
-                            <p className="text-sm text-gray-500">Created: {new Date().toLocaleDateString()}</p> {/* Placeholder for creation date */}
+                            {/* Campo de nombre personalizado editable */}
+                            {editingInstanceId === inst.id ? (
+                              <div className="flex flex-col items-center sm:items-start">
+                                <input
+                                  type="text"
+                                  value={editingCustomName} // CAMBIO: Usar editingCustomName
+                                  onChange={(e) => setEditingCustomName(e.target.value)} // CAMBIO: setEditingCustomName
+                                  className="font-semibold text-lg text-gray-800 border-b border-gray-300 focus:outline-none focus:border-indigo-500 mb-1"
+                                />
+                                <div className="flex gap-2 mt-2">
+                                  <button
+                                    onClick={() => saveEditedName(inst.id)}
+                                    className="px-2 py-1 rounded-md bg-indigo-500 text-white text-sm"
+                                  >
+                                    Save
+                                  </button>
+                                  <button
+                                    onClick={cancelEditingName}
+                                    className="px-2 py-1 rounded-md bg-gray-300 text-gray-800 text-sm"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center sm:items-start">
+                                <p className="font-semibold text-lg text-gray-800">
+                                  {inst.customName || 'Unnamed Instance'} {/* CAMBIO: Mostrar customName */}
+                                  <button
+                                    onClick={() => startEditingName(inst.id, inst.customName || '')} // CAMBIO: Pasar customName
+                                    className="ml-2 text-blue-500 hover:text-blue-700 text-sm"
+                                    title="Edit Instance Name"
+                                  >
+                                    <i className="fas fa-pencil-alt"></i>
+                                  </button>
+                                </p>
+                              </div>
+                            )}
+                            <p className="text-sm text-gray-500">Created: {new Date(inst.createdAt).toLocaleDateString()}</p> {/* Usar inst.createdAt */}
                             <span
                               className={
                                 "mt-2 inline-block text-xs px-3 py-1 rounded-full font-medium " +
@@ -711,13 +781,13 @@ export class CustomPageController {
                         />
                       </div>
                       <div>
-                        <label htmlFor="instanceName" className="block text-sm font-medium text-gray-700">Instance Name (optional)</label>
+                        <label htmlFor="customName" className="block text-sm font-medium text-gray-700">Instance Name (optional)</label> {/* CAMBIO: htmlFor y label */}
                         <input
                           type="text"
-                          id="instanceName"
+                          id="customName" {/* CAMBIO: id */}
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.instanceName}
-                          onChange={(e) => setForm({ ...form, instanceName: e.target.value })}
+                          value={form.customName} // CAMBIO: form.instanceName a form.customName
+                          onChange={(e) => setForm({ ...form, customName: e.target.value })} // CAMBIO: instanceName a customName
                           placeholder="e.g., Sales Team WhatsApp"
                           required
                         />

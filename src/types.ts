@@ -14,9 +14,9 @@ export type InstanceState =
   | 'starting';
 
 export interface User {
-  id: string;
+  // CAMBIO: Renombrado de 'id' a 'locationId' para concordancia con GHL
+  locationId: string;
   companyId?: string | null;
-  locationId?: string | null;
   firstName?: string | null;
   lastName?: string | null;
   email?: string | null;
@@ -30,16 +30,19 @@ export interface User {
 
 export interface Instance {
   id: bigint;
-  idInstance: string; // Identificador único de Evolution API (no modificable). Este es el 'instanceName' de Evolution API.
-  instanceGuid?: string | null; // GUID único generado por Evolution API (si se proporciona)
+  // CAMBIO: Renombrado de 'idInstance' a 'instanceName' para concordancia con Evolution API
+  instanceName: string; // Identificador único de Evolution API (no modificable). Este es el 'instanceName' de Evolution API.
+  // CAMBIO: Renombrado de 'instanceGuid' a 'instanceId' para concordancia con Evolution API
+  instanceId?: string | null; // GUID único generado por Evolution API (si se proporciona), también conocido como 'instanceId' en Evolution API.
   customName?: string | null; // Nombre o descripción editable por el cliente desde su panel
   apiTokenInstance: string;
   state?: InstanceState | null;
   settings: any;
-  userId: string;
-  user?: User;
+  // CAMBIO: Renombrado de 'userId' a 'locationId' para concordancia con User.locationId (GHL)
+  locationId: string;
+  user?: User; // La relación con el modelo User
   createdAt: Date;
-  updatedAt: Date; // Asegúrate de que este campo exista en tu schema.prisma también.
+  updatedAt: Date;
 }
 
 // =================================================================
@@ -47,9 +50,12 @@ export interface Instance {
 // =================================================================
 
 export interface CreateInstanceDto {
-  locationId: string;
-  evolutionApiInstanceId: string; // El ID único y no modificable de la instancia en Evolution API (lo que se ingresa en "Instance ID")
-  apiToken: string; // El token de la API para la instancia (lo que se ingresa en "API Token")
+  locationId: string; // ID de la ubicación GHL a la que pertenece la instancia
+  // CAMBIO: Renombrado de 'evolutionApiInstanceId' a 'instanceName'
+  instanceName: string; // El ID único y no modificable de la instancia en Evolution API (lo que se ingresa en "Instance ID")
+  // CAMBIO: Renombrado de 'apiToken' a 'token' (ajustando a tu estructura actual)
+  token: string; // El token de la API para la instancia (lo que se ingresa en "API Token")
+  // CAMBIO: Asegurado que se llame 'customName'
   customName?: string; // El nombre personalizado/editable por el usuario (lo que se ingresa en "Instance Name (optional)")
 }
 
@@ -61,8 +67,9 @@ export interface UpdateInstanceDto {
 // Tipos para creación y actualización en Prisma
 // =================================================================
 
-export type UserCreateData = Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'instances' | 'hasTokens'> & { id?: string };
-export type UserUpdateData = Partial<Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'instances' | 'hasTokens'>>;
+// CAMBIO: Actualizado para usar 'locationId' en lugar de 'id' en User
+export type UserCreateData = Omit<User, 'locationId' | 'createdAt' | 'updatedAt' | 'instances' | 'hasTokens'> & { locationId?: string };
+export type UserUpdateData = Partial<Omit<User, 'locationId' | 'createdAt' | 'updatedAt' | 'instances' | 'hasTokens'>>;
 
 
 // =================================================================
@@ -85,7 +92,8 @@ export interface MessageData {
 
 export interface EvolutionWebhook {
   event: string;
-  instance: string; // Se refiere al idInstance único de Evolution API
+  // El campo 'instance' del webhook de Evolution API corresponde a nuestro 'instanceName'
+  instance: string; 
   data: any;
   sender?: string;
   destination?: string;
@@ -98,16 +106,16 @@ export interface EvolutionWebhook {
 // =================================================================
 
 export interface AuthReq extends Request {
-  locationId: string;
+  locationId: string; // El ID de la ubicación de GHL
   userData?: GhlUserData;
 }
 
 export interface GhlUserData {
-  userId: string;
+  // CAMBIO: Renombrado de 'userId' a 'locationId' para concordancia con User.locationId
+  locationId: string; 
   companyId: string;
   type: 'location' | 'agency';
-  activeLocation?: string;
-  locationId?: string;
+  activeLocation?: string; // Este campo también es locationId en GHL
   firstName?: string;
   lastName?: string;
   email?: string;
@@ -144,7 +152,7 @@ export interface GhlContactUpsertRequest {
 }
 
 export interface GhlContact {
-  id: string;
+  id: string; // ID interno del contacto GHL
   name: string;
   locationId: string;
   phone: string;
@@ -154,4 +162,3 @@ export interface GhlContact {
 export interface GhlContactUpsertResponse {
   contact: GhlContact;
 }
-

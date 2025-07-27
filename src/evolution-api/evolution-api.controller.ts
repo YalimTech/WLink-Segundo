@@ -32,12 +32,14 @@ export class EvolutionApiController {
 
   /**
    * Obtiene todas las instancias asociadas a una ubicación de GHL.
+   * También refresca el estado de las instancias consultando la Evolution API.
    */
   @Get()
   async getInstances(@Req() req: AuthReq) {
     const { locationId } = req;
     const instances = await this.prisma.getInstancesByUserId(locationId);
 
+    // Refrescar el estado de cada instancia consultando la Evolution API
     const refreshed = await Promise.all(
       instances.map(async (instance) => {
         try {
@@ -45,16 +47,20 @@ export class EvolutionApiController {
             instance.apiTokenInstance,
             instance.idInstance,
           );
+          // La Evolution API puede devolver 'state' o 'status' para el estado
           const state = status?.state ?? status?.status;
           if (state && state !== instance.state) {
+            // Si el estado ha cambiado, actualizarlo en la base de datos
             await this.prisma.updateInstanceState(
               instance.idInstance,
-              state as any,
+              state as any, // Castear a 'any' si hay un ligero desajuste de tipos
             );
-            instance.state = state as any;
+            instance.state = state as any; // Actualizar el objeto en memoria para la respuesta
           }
         } catch (err) {
-          this.logger.warn(`Failed to refresh state for ${instance.idInstance}`);
+          this.logger.warn(`Failed to refresh state for instance ${instance.idInstance}: ${err.message}`);
+          // Opcional: Podrías establecer un estado de error si la instancia no responde
+          // await this.prisma.updateInstanceState(instance.idInstance, 'error');
         }
         return instance;
       }),
@@ -73,6 +79,7 @@ export class EvolutionApiController {
 
   /**
    * Agrega una nueva instancia (creada manualmente) al sistema.
+   * Requiere instanceId, token y instanceName en el cuerpo de la solicitud.
    */
   @Post()
   async createInstance(@Req() req: AuthReq, @Body() dto: CreateInstanceDto) {
@@ -100,7 +107,8 @@ export class EvolutionApiController {
   
   /**
    * Desconecta una instancia de WhatsApp sin borrarla.
-   * ✅ CORRECCIÓN: Ahora usa el ID numérico de la base de datos.
+   * Esto hace que la sesión de WhatsApp se cierre y requiera un nuevo escaneo de QR.
+   * ✅ IMPORTANTE: Se ha añadido la actualización del estado en la DB a 'notAuthorized'.
    */
   @Delete(':id/logout')
   async logoutInstance(@Param('id') id: string, @Req() req: AuthReq) {
@@ -112,13 +120,22 @@ export class EvolutionApiController {
       throw new UnauthorizedException('Instance not found or not authorized');
     }
     try {
+      // Llama al servicio de Evolution para desconectar la instancia
       await this.evolutionService.logoutInstance(
         inst.apiTokenInstance,
         inst.idInstance,
       );
+      
+      // Actualiza el estado de la instancia en tu base de datos a 'notAuthorized'
+      // Esto es crucial para que la UI refleje inmediatamente que la sesión está cerrada.
+      // La Evolution API también debería enviar un webhook de `connection.update` que lo haría,
+      // pero esta actualización directa asegura una mayor reactividad.
+      await this.prisma.updateInstanceState(inst.idInstance, 'notAuthorized'); 
+
+      this.logger.log(`Instance ${inst.name} (ID: ${inst.idInstance}) logged out successfully.`);
       return { success: true, message: 'Logout command sent successfully.' };
     } catch (err: any) {
-      this.logger.error(`Failed to logout ${inst.name}: ${err.message}`);
+      this.logger.error(`Failed to logout ${inst.name} (ID: ${inst.idInstance}): ${err.message}`);
       if (err instanceof HttpException) throw err;
       throw new HttpException('Failed to logout instance', HttpStatus.INTERNAL_SERVER_ERROR);
     }
@@ -126,7 +143,7 @@ export class EvolutionApiController {
 
   /**
    * Borra una instancia permanentemente, tanto de Evolution API como de la base de datos local.
-   * ✅ CORRECCIÓN: Ahora usa el ID numérico de la base de datos.
+   * Se asegura de que la instancia pertenezca al usuario autenticado.
    */
   @Delete(':id')
   async deleteInstance(@Param('id') id: string, @Req() req: AuthReq) {
@@ -141,16 +158,18 @@ export class EvolutionApiController {
     }
     
     try {
+      // Intenta borrar la instancia de la Evolution API
       await this.evolutionService.deleteInstance(
         instanceData.apiTokenInstance,
         instanceData.idInstance,
       );
       this.logger.log(`Instance ${instanceData.name} deleted from Evolution API.`);
     } catch (error) {
+      // Si falla, solo lo loguea y continúa, ya que la instancia podría no existir en Evolution API
       this.logger.warn(`Could not delete ${instanceData.name} from Evolution. It might already be gone. Continuing...`);
     }
 
-    // Nota: Asegúrate de tener el método 'removeInstanceById' en tu prisma.service.ts
+    // Finalmente, borra la instancia de la base de datos local
     await this.prisma.removeInstanceById(instanceId);
     this.logger.log(`Instance ID ${id} deleted from local database.`);
     return {
@@ -161,7 +180,7 @@ export class EvolutionApiController {
 
   /**
    * Actualiza el nombre (nickname) de una instancia.
-   * Nota: Este método también necesitaría ser ajustado si se usa desde el frontend.
+   * Se asegura de que la instancia pertenezca al usuario autenticado.
    */
   @Patch(':instance')
   async updateInstance(
@@ -170,7 +189,7 @@ export class EvolutionApiController {
     @Req() req: AuthReq,
   ) {
     const { locationId } = req;
-    const instanceData = await this.prisma.getInstance(instance);
+    const instanceData = await this.prisma.getInstance(instance); // Asumiendo que getInstance puede buscar por instanceGuid
     if (!instanceData || instanceData.userId !== locationId) {
       throw new HttpException('Instance not found or not authorized for this location', HttpStatus.FORBIDDEN);
     }
@@ -187,4 +206,5 @@ export class EvolutionApiController {
     }
   }
 }
+
 

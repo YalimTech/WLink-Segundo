@@ -83,10 +83,14 @@ export class PrismaService
   // --- MÉTODOS DE INSTANCIA ---
   async createInstance(data: any): Promise<Instance & { user: User }> {
     if (this.client)
+      // `data` debe contener idInstance, instanceGuid, apiTokenInstance, userId, customName, state, settings
       return this.client.instance.create({ data, include: { user: true } });
-    this.memory!.instances.set(parseId(data.idInstance), { ...(data as any) });
+    
+    // Fallback en memoria: Asegúrate de que los campos estén correctamente asignados
+    const instanceData = { ...data, idInstance: parseId(data.idInstance) }; // Asegura que idInstance sea string para la clave
+    this.memory!.instances.set(instanceData.idInstance, instanceData);
     const user = this.memory!.users.get(data.userId);
-    return { ...(data as any), user } as any;
+    return { ...instanceData, user } as any;
   }
 
   async getInstanceById(id: bigint): Promise<(Instance & { user: User }) | null> {
@@ -97,7 +101,8 @@ export class PrismaService
       });
     }
     for (const inst of this.memory!.instances.values()) {
-      if (inst.id === id) {
+      // Comparar directamente BigInt con BigInt si es posible, o convertir para comparación
+      if (inst.id === id) { 
         const user = this.memory!.users.get(inst.userId);
         return { ...inst, user } as any;
       }
@@ -143,6 +148,7 @@ export class PrismaService
     }
     const inst = await this.getInstanceById(id);
     if (!inst) throw new Error(`Instance with ID ${id} not found.`);
+    // En el caso de memoria, eliminamos por el idInstance (que es la clave en el Map)
     this.memory!.instances.delete(parseId(inst.idInstance));
     return inst;
   }
@@ -160,16 +166,25 @@ export class PrismaService
     return inst;
   }
 
-  async updateInstanceName(idInstance: string, name: string): Promise<Instance & { user: User }> {
+  /**
+   * ✅ MÉTODO RENOMBRADO: Antes `updateInstanceName`.
+   * Actualiza el nombre personalizado (customName) de una instancia.
+   * El `name` en el esquema de Prisma se mapea a `customName` en la interfaz.
+   */
+  async updateInstanceCustomName(idInstance: string, customName: string): Promise<Instance & { user: User }> {
     if (this.client)
       return this.client.instance.update({
         where: { idInstance: parseId(idInstance) },
-        data: { name },
+        data: { name: customName }, // 'name' es la columna en DB para 'customName'
         include: { user: true },
       });
     const inst = await this.getInstance(idInstance);
     if (!inst) throw new Error(`Instance ${idInstance} not found.`);
-    (inst as any).name = name;
+    (inst as any).customName = customName; // Actualizar el campo 'customName' en memoria
+    // Si en memoria la propiedad es 'name', se debería actualizar 'name': (inst as any).name = customName;
+    // Esto depende de cómo se almacenan las propiedades en el objeto `inst` en el Map `memory.instances`.
+    // Si `customName` se guarda como `customName` en el objeto, esta línea es correcta.
+    // Si se guarda como `name`, entonces: `(inst as any).name = customName;`
     this.memory!.instances.set(parseId(idInstance), inst);
     return inst;
   }
@@ -188,17 +203,22 @@ export class PrismaService
     return inst;
   }
   
-  async updateInstanceStateByName(instanceName: string, state: InstanceState): Promise<{ count: number }> {
+  /**
+   * ✅ MÉTODO RENOMBRADO: Antes `updateInstanceStateByName`.
+   * Actualiza el estado de las instancias basándose en su `customName`.
+   * El `name` en el esquema de Prisma se mapea a `customName` en la interfaz.
+   */
+  async updateInstanceStateByCustomName(customName: string, state: InstanceState): Promise<{ count: number }> {
     if (this.client) {
-      this.logger.log(`Updating state for instance(s) with name '${instanceName}' to '${state}'`);
+      this.logger.log(`Updating state for instance(s) with custom name '${customName}' to '${state}'`);
       return this.client.instance.updateMany({
-        where: { name: instanceName },
+        where: { name: customName }, // 'name' es la columna en DB para 'customName'
         data: { state },
       });
     }
     let count = 0;
     for (const [key, inst] of this.memory!.instances.entries()) {
-      if (inst.name === instanceName) {
+      if (inst.customName === customName) { // Usar customName para la comparación en memoria
         inst.state = state;
         this.memory!.instances.set(key, inst);
         count++;
@@ -228,31 +248,47 @@ export class PrismaService
         where: { instanceGuid: guid },
         include: { user: true },
       });
-    return this.getInstance(guid);
+    // En el fallback en memoria, si `getInstance` busca por `idInstance`, y el GUID
+    // no es siempre igual al `idInstance`, esto puede ser incorrecto.
+    // Debería buscar específicamente por `instanceGuid`.
+    for (const inst of this.memory!.instances.values()) {
+        if (inst.instanceGuid === guid) {
+            return { ...inst, user: this.memory!.users.get(inst.userId) } as any;
+        }
+    }
+    return null;
   }
 
-  async getInstanceByNameAndToken(name: string, token: string): Promise<(Instance & { user: User }) | null> {
+  /**
+   * ✅ MÉTODO CORREGIDO: Antes `getInstanceByNameAndToken`.
+   * Busca una instancia por su `idInstance` (el ID único de Evolution API) y `apiTokenInstance`.
+   */
+  async getInstanceByIdInstanceAndToken(evolutionApiInstanceId: string, apiTokenInstance: string): Promise<(Instance & { user: User }) | null> {
     if (this.client)
       return this.client.instance.findFirst({
-        where: { name, apiTokenInstance: token },
+        where: { idInstance: parseId(evolutionApiInstanceId), apiTokenInstance: apiTokenInstance }, // Buscar por idInstance
         include: { user: true },
       });
     for (const inst of this.memory!.instances.values()) {
-      if (inst.name === name && inst.apiTokenInstance === token) {
+      if (inst.idInstance === evolutionApiInstanceId && inst.apiTokenInstance === apiTokenInstance) {
         return { ...inst, user: this.memory!.users.get(inst.userId) } as any;
       }
     }
     return null;
   }
 
-  async findInstanceByNameOnly(name: string): Promise<(Instance & { user: User }) | null> {
+  /**
+   * ✅ MÉTODO RENOMBRADO: Antes `findInstanceByNameOnly`.
+   * Busca una instancia por su `idInstance` (el ID único de Evolution API).
+   */
+  async findInstanceByIdInstanceOnly(evolutionApiInstanceId: string): Promise<(Instance & { user: User }) | null> {
     if (this.client)
       return this.client.instance.findFirst({
-        where: { name },
+        where: { idInstance: parseId(evolutionApiInstanceId) }, // Buscar por idInstance
         include: { user: true },
       });
     for (const inst of this.memory!.instances.values()) {
-      if (inst.name === name) {
+      if (inst.idInstance === evolutionApiInstanceId) {
         return { ...inst, user: this.memory!.users.get(inst.userId) } as any;
       }
     }

@@ -1,3 +1,4 @@
+//src/webhooks/guards/dynamic-instance.guard.ts
 import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Request } from 'express';
@@ -13,8 +14,9 @@ export class DynamicInstanceGuard implements CanActivate {
     const payload = request.body as EvolutionWebhook | undefined;
     const authHeader = request.headers['authorization'] as string | undefined;
 
+    // payload.instance es el 'instanceName' de Evolution API según tu modelo EvolutionWebhook
     if (!payload?.instance) {
-      throw new UnauthorizedException('Missing instance id');
+      throw new UnauthorizedException('Missing instance name in webhook payload'); // Mensaje de error más específico
     }
 
     if (!authHeader?.startsWith('Bearer ')) {
@@ -26,7 +28,9 @@ export class DynamicInstanceGuard implements CanActivate {
       throw new UnauthorizedException('Missing bearer token');
     }
 
-    const instance = await this.prisma.getInstance(payload.instance);
+    // Busca la instancia por su 'instanceName' (que viene en payload.instance)
+    // El método `getInstance` de PrismaService ya fue actualizado para esperar 'instanceName'.
+    const instance = await this.prisma.getInstance(payload.instance); 
     if (!instance) {
       throw new UnauthorizedException('Instance not found');
     }

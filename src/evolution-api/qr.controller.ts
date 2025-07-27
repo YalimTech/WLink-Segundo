@@ -29,11 +29,11 @@ export class QrController {
   // ✅ El parámetro de la ruta 'id' es correcto.
   @Get(':id')
   async getQrCode(
-    @Param('id') id: string,
+    @Param('id') id: string, // Este 'id' es el ID numérico de la DB (BigInt)
     @Req() req: AuthReq,
   ) {
     const { locationId } = req;
-    this.logger.log(`QR request for instance numeric ID: ${id} from location: ${locationId}`);
+    this.logger.log(`Solicitud de QR para la instancia con ID numérico: ${id} desde la ubicación: ${locationId}`);
 
     try {
       // ✅ Convierte correctamente el 'id' (string) a 'BigInt' para la consulta.
@@ -43,24 +43,26 @@ export class QrController {
       // ✅ Valida la autorización correctamente.
       if (!instance || instance.userId !== locationId) {
         throw new UnauthorizedException(
-          'Instance not found or you are not authorized to access it',
+          'Instancia no encontrada o no estás autorizado para acceder a ella',
         );
       }
 
       // ✅ Actualiza el estado a 'qr_code' en la base de datos, lo cual es clave.
+      // Usar instance.idInstance (el ID único de Evolution API) para actualizar el estado.
       await this.prisma.updateInstanceState(instance.idInstance, 'qr_code');
-      this.logger.log(`Instance state updated to 'qr_code' for: ${instance.name}`);
+      this.logger.log(`Estado de la instancia actualizado a 'qr_code' para: ${instance.idInstance}`); // Usar instance.idInstance en el log
 
-      // ✅ Pasa el 'name' de la instancia a la API de Evolution, lo cual es correcto.
+      // ✅ Pasa el 'idInstance' de la instancia a la API de Evolution.
+      // La API de Evolution espera el identificador único de la instancia, que es 'idInstance'.
       const qrData = await this.evolutionService.getQrCode(
         instance.apiTokenInstance,
-        instance.name, // La API de Evolution usa el nombre legible.
+        instance.idInstance, // CORRECTO: La API de Evolution usa el idInstance único.
       );
 
       // ✅ Maneja respuestas inesperadas de la API.
       if (!qrData || !qrData.type || !qrData.data) {
         this.logger.error(
-          `Unexpected response from Evolution API for instance "${instance.name}": ${JSON.stringify(qrData)}`
+          `Respuesta inesperada de la API de Evolution para la instancia "${instance.idInstance}": ${JSON.stringify(qrData)}` // Usar instance.idInstance en el log
         );
         throw new HttpException(
           'Unexpected response from QR service',
@@ -72,13 +74,11 @@ export class QrController {
     } catch (err: any) {
       // ✅ Manejo de errores robusto.
       this.logger.error(
-        `Failed to get QR for instance ID "${id}": ${err.message}`,
+        `Error al obtener el QR para la instancia con ID "${id}" (Evolution API ID: ${err.instanceId || 'N/A'}): ${err.message}`,
         err.stack,
       );
       if (err instanceof HttpException) throw err;
-      throw new InternalServerErrorException('Failed to fetch QR code from Evolution API');
+      throw new InternalServerErrorException('Error al obtener el código QR de la API de Evolution');
     }
   }
 }
-
-

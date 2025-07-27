@@ -106,6 +106,8 @@ export class CustomPageController {
    * - Refinamiento en el manejo de estados y polling.
    * - CORRECCIÓN: Uso de concatenación de strings para evitar conflictos con el compilador de TypeScript.
    * - CORRECCIÓN: Mejoras en la lógica de renderizado del QR y depuración.
+   * - NUEVA CORRECCIÓN: Aumento de la frecuencia de polling del frontend para una mejor sincronización del estado.
+   * - NUEVA CORRECCIÓN: Logs explícitos en el frontend para el estado de las instancias.
    */
   private generateCustomPageHTML(): string {
     return `
@@ -217,9 +219,9 @@ export class CustomPageController {
               useEffect(() => {
                 if (locationId) {
                   loadInstances();
-                  // Configura el polling principal para refrescar el estado de las instancias cada 10 segundos
+                  // Configura el polling principal para refrescar el estado de las instancias cada 3 segundos
                   if (mainIntervalRef.current) clearInterval(mainIntervalRef.current); // Limpiar si ya existe
-                  mainIntervalRef.current = setInterval(loadInstances, 10000); // Poll every 10 seconds
+                  mainIntervalRef.current = setInterval(loadInstances, 3000); // Poll every 3 seconds (was 10s)
                 }
                 // Limpieza de intervalos al desmontar el componente
                 return () => {
@@ -310,6 +312,10 @@ export class CustomPageController {
                   const data = await makeApiRequest('/api/instances');
                   setInstances(data.instances);
                   console.log('Main polling: Instances loaded:', data.instances);
+                  // NUEVO LOG: Mostrar el estado de cada instancia individualmente
+                  data.instances.forEach(inst => {
+                      console.log('  Instance ' + inst.name + ' (ID: ' + inst.id + ') state: ' + inst.state);
+                  });
 
                   // Lógica para cerrar el modal QR desde el polling principal
                   if (showQr && qrInstanceIdRef.current) {

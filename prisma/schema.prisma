@@ -14,9 +14,9 @@ datasource db {
 model User {
   id           String    @id @unique @map("locationId") // GoHighLevel Location ID
   companyId    String?
-  firstName    String?   // Nuevo: Campo para el nombre del usuario de GHL
-  lastName     String?   // Nuevo: Campo para el apellido del usuario de GHL
-  email        String?   // Nuevo: Campo para el email del usuario de GHL
+  firstName    String?   // Campo para el nombre del usuario de GHL
+  lastName     String?   // Campo para el apellido del usuario de GHL
+  email        String?   // Campo para el email del usuario de GHL
   accessToken  String    @db.Text
   refreshToken String    @db.Text
   tokenExpiresAt DateTime?
@@ -39,14 +39,14 @@ enum InstanceState {
 model Instance {
   id                BigInt       @id @default(autoincrement())
 
-  /// Nombre de la Instancia - No modificable (ej. 'correoejemplo@gmail.com', 'nombreDeEjemplo', etc.)
+  /// Nombre de la Instancia (identificador único de Evolution API) - No modificable
   idInstance        String       @unique @db.Text
 
   /// GUID único generado por Evolution API
   instanceGuid      String?      @unique @db.Text
 
-  /// Nombre opcional adicional - Modificable por el cliente desde su panel (ej. 'Numero de Servicio al Cliente 1', Flota Personal, etc.)
-  name              String?
+  /// Nombre o descripción editable por el cliente desde su panel (ej. 'Numero de Servicio al Cliente 1', 'Flota Personal', etc.)
+  customName        String?      @map("name") // CAMBIO: Renombrado de 'name' a 'customName' y mapeado a la columna 'name' existente
 
   apiTokenInstance  String       @db.Text
 
@@ -58,6 +58,8 @@ model Instance {
 
   settings          Json?        @default("{}") @db.Json
   createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt // Es buena práctica tener un campo de actualización
 
   @@index([userId])
 }
+

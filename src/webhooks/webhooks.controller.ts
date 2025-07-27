@@ -50,11 +50,33 @@ export class WebhooksController {
         return;
       }
 
-      // ✅ CORRECCIÓN PRINCIPAL: Volvemos a delegar SIEMPRE el procesamiento del webhook al servicio.
-      // El servicio (EvolutionApiService) ya contiene la lógica de mapeo de estados completa
-      // y la actualización de la base de datos, incluyendo las verificaciones de 'data' y 'data.state'.
-      await this.evolutionApiService.handleEvolutionWebhook(payload);
-
+      // ✅ CORRECCIÓN PRINCIPAL para el error "Cannot read properties of undefined (reading 'state')":
+      // Añadimos una verificación explícita para payload.data y payload.event.
+      // Esto previene errores si el payload no tiene la estructura esperada para un evento.
+      if (payload.event === 'connection.update') {
+        // Para 'connection.update', esperamos 'data' y 'data.state'.
+        if (!payload.data || typeof payload.data.state === 'undefined') {
+          this.logger.error(
+            `Evolution Webhook 'connection.update' received, but 'data' or 'data.state' is missing/undefined for instance: ${payload.instance}. Full Payload: ${JSON.stringify(payload)}`,
+          );
+          return; // Ignoramos este webhook para evitar el crash si el estado es inesperado.
+        }
+        // Si todo está en orden, delegamos al servicio.
+        await this.evolutionApiService.handleEvolutionWebhook(payload);
+      } else if (payload.event === 'messages.upsert') {
+        // Para 'messages.upsert', esperamos 'data.key.remoteJid'.
+        if (!payload.data?.key?.remoteJid) {
+            this.logger.warn(`Webhook 'messages.upsert' for instance ${payload.instance} is missing remoteJid. Ignoring. Full Payload: ${JSON.stringify(payload)}`);
+            return;
+        }
+        await this.evolutionApiService.handleEvolutionWebhook(payload);
+      } else {
+        // ✅ LOG: Registramos otros eventos que puedan llegar pero que no tienen un manejador específico aquí.
+        this.logger.log(`Evolution Webhook event '${payload.event}' received for instance ${payload.instance}. No specific handler implemented in controller. Full Payload: ${JSON.stringify(payload)}`);
+        // Si necesitas manejar otros eventos, deberías añadir más `else if` o delegar al servicio
+        // para un manejo más genérico si corresponde.
+      }
+      
       this.logger.log(`Evolution Webhook processed successfully for instance: ${payload.instance}, Event: ${payload.event}.`);
 
     } catch (error) {

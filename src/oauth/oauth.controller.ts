@@ -1,3 +1,4 @@
+//src/oauth/oauth.controller.ts
 import {
   Controller,
   Get,
@@ -29,14 +30,14 @@ export class GhlOauthController {
   async callback(
     @Query()
     query: GhlOAuthCallbackDto & {
-      evolutionApiInstanceId?: string; // Renombrado de 'instanceId'
-      apiToken?: string; // Renombrado de 'token'
-      customName?: string; // Renombrado de 'instanceName'
+      instanceName?: string; // CAMBIO: Renombrado de 'evolutionApiInstanceId' a 'instanceName'
+      token?: string; // Mantenido como 'token'
+      customName?: string; // Mantenido como 'customName'
     },
     @Res() res: Response,
   ) {
     // Usar los nuevos nombres para desestructurar la consulta
-    const { code, evolutionApiInstanceId, apiToken, customName } = query;
+    const { code, instanceName, token, customName } = query;
     this.logger.log(`GHL OAuth callback recibido. Code: ${code ? 'present' : 'MISSING'}`);
 
     if (!code) {
@@ -86,8 +87,9 @@ export class GhlOauthController {
 
       const tokenExpiresAt = new Date(Date.now() + expires_in * 1000);
 
+      // CAMBIO: Usar 'locationId' en lugar de 'id' al crear el usuario
       await this.prisma.createUser({
-        id: respLocationId,
+        locationId: respLocationId, // CAMBIO: 'id' a 'locationId'
         accessToken: access_token,
         refreshToken: refresh_token,
         tokenExpiresAt,
@@ -96,16 +98,17 @@ export class GhlOauthController {
 
       this.logger.log(`Stored/updated GHL tokens for Location: ${respLocationId}`);
 
-      // Usar los nuevos nombres de los parámetros
-      if (evolutionApiInstanceId && apiToken && customName) {
+      // Usar los nuevos nombres de los parámetros y asegurar 'locationId'
+      if (instanceName && token && customName) {
         try {
           await this.evolutionApiService.createEvolutionApiInstanceForUser(
-            respLocationId,
-            evolutionApiInstanceId, // Pasar el Evolution API Instance ID
-            apiToken,               // Pasar el API Token
-            customName,             // Pasar el customName
+            respLocationId, // El locationId del usuario GHL
+            instanceName,   // El instanceName de Evolution API
+            token,          // El token de la instancia
+            customName,     // El customName de la instancia
           );
-          this.logger.log(`Evolution API instance ${evolutionApiInstanceId} (Custom Name: ${customName}) stored for location ${respLocationId}`);
+          // CAMBIO: Actualizar el mensaje de log
+          this.logger.log(`Evolution API instance '${instanceName}' (Custom Name: '${customName}') stored for location '${respLocationId}'`);
         } catch (err) {
           this.logger.error(`Failed to store Evolution API instance: ${err.message}`);
         }

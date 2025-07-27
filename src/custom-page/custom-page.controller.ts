@@ -8,7 +8,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
-  UnauthorizedException, // Asegúrate de importar UnauthorizedException
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
@@ -25,6 +25,7 @@ export class CustomPageController {
 
   @Get('whatsapp')
   async getCustomPage(@Res() res: Response) {
+    // Configuración de encabezados para permitir el iframing y CORS
     res.setHeader('X-Frame-Options', 'ALLOWALL');
     res.setHeader('Content-Security-Policy', 'frame-ancestors *');
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -42,7 +43,7 @@ export class CustomPageController {
     try {
       const sharedSecret = this.configService.get<string>('GHL_SHARED_SECRET');
       if (!sharedSecret) {
-        this.logger.error('GHL_SHARED_SECRET not configured on the server.'); // LOG
+        this.logger.error('GHL_SHARED_SECRET not configured on the server.');
         return res
           .status(400)
           .json({ error: 'Shared secret not configured on the server.' });
@@ -55,28 +56,27 @@ export class CustomPageController {
 
       if (!decrypted) {
         this.logger.warn(
-          'GHL context decryption failed. Decrypted content is empty. Check your GHL_SHARED_SECRET.', // LOG
+          'GHL context decryption failed. Decrypted content is empty. Check your GHL_SHARED_SECRET.',
         );
         throw new UnauthorizedException('Invalid GHL context: decryption failed.');
       }
 
       const userData = JSON.parse(decrypted);
 
-      this.logger.log('Decrypted user data received.'); // LOG
+      this.logger.log('Decrypted user data received.');
 
-      // ✅ REAFIRMACIÓN: Usar activeLocation como fuente principal
       const locationId = userData.activeLocation;
 
       if (!locationId) {
         this.logger.warn({
           message: 'No activeLocation property found in decrypted GHL payload.',
           decryptedPayload: userData,
-        }); // LOG
+        });
         throw new UnauthorizedException('No active location ID in user context');
       }
 
       const user = await this.prisma.findUser(locationId);
-      console.log('User found in DB:', user ? user.id : 'None'); // LOG
+      this.logger.log(`User found in DB for locationId ${locationId}: ${user ? user.id : 'None'}`);
 
       return res.json({
         success: true,
@@ -87,7 +87,7 @@ export class CustomPageController {
           : null,
       });
     } catch (error) {
-      this.logger.error('Error decrypting user data:', error.stack); // LOG
+      this.logger.error('Error decrypting user data:', error.stack);
       if (error instanceof UnauthorizedException) {
         throw error;
       }
@@ -95,23 +95,86 @@ export class CustomPageController {
     }
   }
 
+  /**
+   * Genera el HTML completo para la página de gestión de instancias de WhatsApp.
+   * Incluye la aplicación React con toda la lógica de UI y llamadas a la API.
+   * ✅ Mejoras clave:
+   * - Diseño responsivo y moderno con Tailwind CSS.
+   * - Sistema de modales personalizado para alertas y confirmaciones.
+   * - Lógica de logout con botón condicional.
+   * - Indicador de carga para el QR.
+   * - Refinamiento en el manejo de estados y polling.
+   */
   private generateCustomPageHTML(): string {
     return `
       <!DOCTYPE html>
       <html lang="en">
         <head>
           <meta charset="UTF-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>WLink Bridge - Manager</title>
-          <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+          <!-- Tailwind CSS CDN para estilos rápidos y responsivos -->
+          <script src="https://cdn.tailwindcss.com"></script>
+          <!-- Fuentes de Google Fonts (Inter) -->
+          <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+          <!-- React y ReactDOM CDN -->
           <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
           <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+          <!-- Babel para transpilar JSX en el navegador -->
           <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+          <!-- QRCode.js para generar códigos QR -->
           <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+          <style>
+            body {
+              font-family: 'Inter', sans-serif;
+            }
+            /* Estilos para el modal personalizado */
+            .modal-overlay {
+              position: fixed;
+              top: 0;
+              left: 0;
+              width: 100%;
+              height: 100%;
+              background-color: rgba(0, 0, 0, 0.6); /* Fondo más oscuro */
+              display: flex;
+              justify-content: center;
+              align-items: center;
+              z-index: 1000;
+            }
+            .modal-content {
+              background-color: white;
+              padding: 2rem;
+              border-radius: 0.75rem; /* rounded-xl */
+              box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2); /* shadow-lg más pronunciado */
+              max-width: 90%;
+              width: 400px;
+              text-align: center;
+              animation: fadeIn 0.3s ease-out; /* Animación de entrada */
+            }
+            @keyframes fadeIn {
+              from { opacity: 0; transform: translateY(-20px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+            /* Estilos para el spinner de carga */
+            .spinner {
+              border: 4px solid rgba(0, 0, 0, 0.1);
+              border-left-color: #6366f1; /* Color índigo de Tailwind */
+              border-radius: 50%;
+              width: 40px;
+              height: 40px;
+              animation: spin 1s linear infinite;
+            }
+            @keyframes spin {
+              0% { transform: rotate(0deg); }
+              100% { transform: rotate(360deg); }
+            }
+          </style>
         </head>
-        <body class="bg-gray-50 p-6">
-          <div id="root" class="max-w-3xl mx-auto"></div>
+        <body class="bg-gray-100 p-4 sm:p-6 min-h-screen flex items-center justify-center">
+          <div id="root" class="w-full max-w-3xl mx-auto"></div>
           <script type="text/babel">
             const { useState, useEffect, useRef } = React;
+
             function App() {
               const [locationId, setLocationId] = useState(null);
               const [encrypted, setEncrypted] = useState(null);
@@ -119,220 +182,262 @@ export class CustomPageController {
               const [form, setForm] = useState({ instanceId: '', token: '', instanceName: '' });
               const [qr, setQr] = useState('');
               const [showQr, setShowQr] = useState(false);
-              const pollRef = useRef(null);
-              const mainIntervalRef = useRef(null);
+              const [qrLoading, setQrLoading] = useState(false); // Estado para el loading del QR
+              const pollRef = useRef(null); // Ref para el intervalo de polling del QR
+              const mainIntervalRef = useRef(null); // Ref para el intervalo de polling principal
               const qrInstanceIdRef = useRef(null); // Para guardar el ID de la instancia cuyo QR se está mostrando
+              const qrCodeDivRef = useRef(null); // Ref para el div donde se renderizará el QR
+              const [modal, setModal] = useState({ show: false, message: '', type: '', onConfirm: null, onCancel: null }); // Estado para el modal
 
+              // Función para mostrar el modal personalizado
+              const showModal = (message, type = 'info', onConfirm = null, onCancel = null) => {
+                setModal({ show: true, message, type, onConfirm, onCancel });
+              };
+
+              // Función para cerrar el modal personalizado
+              const closeModal = () => {
+                setModal({ show: false, message: '', type: '', onConfirm: null, onCancel: null });
+              };
+
+              // Efecto para obtener locationId y encrypted al cargar la página (desde el iframe)
               useEffect(() => {
                 const listener = (e) => {
-                  if (e.data?.message === 'REQUEST_USER_DATA_RESPONSE') processUser(e.data.payload);
+                  if (e.data?.message === 'REQUEST_USER_DATA_RESPONSE') {
+                    processUser(e.data.payload);
+                  }
                 };
                 window.addEventListener('message', listener);
-                window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*');
-                // Corregido 'messaage' a 'message' en el cleanup del useEffect
+                window.parent.postMessage({ message: 'REQUEST_USER_DATA' }, '*'); // Solicitar datos de usuario al padre
                 return () => window.removeEventListener('message', listener);
               }, []);
 
+              // Efecto para cargar instancias y configurar el polling principal una vez que locationId esté disponible
               useEffect(() => {
                 if (locationId) {
-                  console.log('LocationId set:', locationId, 'Loading instances...'); // LOG
                   loadInstances();
-                  if (mainIntervalRef.current) clearInterval(mainIntervalRef.current);
-                  mainIntervalRef.current = setInterval(loadInstances, 10000); // Polling cada 10s para la lista general
+                  // Configura el polling principal para refrescar el estado de las instancias cada 10 segundos
+                  if (mainIntervalRef.current) clearInterval(mainIntervalRef.current); // Limpiar si ya existe
+                  mainIntervalRef.current = setInterval(loadInstances, 10000); // Poll every 10 seconds
                 }
+                // Limpieza de intervalos al desmontar el componente
                 return () => {
                   if (mainIntervalRef.current) clearInterval(mainIntervalRef.current);
                   if (pollRef.current) clearInterval(pollRef.current);
                 };
               }, [locationId]);
 
-              async function makeApiRequest(url, options = {}) {
-                console.log(\`Making API request to: \${url}\`, options); // LOG
-                const res = await fetch(url, {
-                  credentials: 'include',
-                  headers: { 'Content-Type': 'application/json', 'X-GHL-Context': encrypted },
-                  ...options,
-                });
-                // ✅ MEJORA: Manejar errores JSON si la respuesta no es un JSON válido
+              // Efecto para renderizar el QR cuando 'showQr' y 'qr' cambian
+              useEffect(() => {
+                if (showQr && qr && qrCodeDivRef.current) {
+                  qrCodeDivRef.current.innerHTML = ''; // Limpiar cualquier QR anterior
+                  // QRCode.js puede tomar una URL de imagen base64 directamente
+                  if (qr.startsWith('data:image')) {
+                    const img = document.createElement('img');
+                    img.src = qr;
+                    img.className = "mx-auto max-w-full h-auto"; // Estilos para la imagen QR
+                    qrCodeDivRef.current.appendChild(img);
+                  } else {
+                    // Si es un string de texto (código de emparejamiento), generarlo como QR
+                    new QRCode(qrCodeDivRef.current, {
+                      text: qr,
+                      width: 256,
+                      height: 256,
+                      colorDark : "#000000",
+                      colorLight : "#ffffff",
+                      correctLevel : QRCode.CorrectLevel.H
+                    });
+                  }
+                }
+              }, [showQr, qr]);
+
+              // Función genérica para hacer solicitudes a la API con manejo de errores y headers
+              async function makeApiRequest(path, options = {}) {
+                const headers = {
+                  'Content-Type': 'application/json',
+                  'X-GHL-Context': encrypted, // Asegúrate de enviar el contexto en cada petición
+                  ...options.headers,
+                };
+
+                const response = await fetch(path, { ...options, headers });
                 let data;
                 try {
-                  data = await res.json();
+                  data = await response.json();
                 } catch (e) {
-                  console.error(\`Error parsing JSON from \${url}. Status: \${res.status} \${res.statusText}\`, e, res); // Log completo de la respuesta
-                  throw new Error(res.statusText || 'Invalid JSON response from server');
+                  console.error(`Error parsing JSON from ${path}. Status: ${response.status} ${response.statusText}`, e, response);
+                  throw new Error(response.statusText || 'Invalid JSON response from server');
                 }
-                if (!res.ok) {
-                  console.error(\`API request to \${url} failed. Status: \${res.status}. Response:\`, data); // LOG
+                if (!response.ok) {
+                  console.error(`API request to ${path} failed. Status: ${response.status}. Response:`, data);
                   throw new Error(data.message || 'API request failed');
                 }
-                console.log(\`API request to \${url} successful. Response:\`, data); // LOG
                 return data;
               }
 
+              // Procesa los datos de usuario desencriptados del padre
               async function processUser(enc) {
                 try {
                   const res = await makeApiRequest('/app/decrypt-user-data', { method: 'POST', body: JSON.stringify({ encryptedData: enc }) });
                   setEncrypted(enc);
                   setLocationId(res.locationId);
-                  console.log('User data decrypted and locationId set:', res.locationId); // LOG
+                  console.log('User data decrypted and locationId set:', res.locationId);
                 } catch (err) {
-                  console.error('Error processing user data:', err); // LOG
-                  alert('Failed to load user data. Please ensure the app is installed correctly.');
+                  console.error('Error processing user data:', err);
+                  showModal('Failed to load user data. Please ensure the app is installed correctly. ' + err.message, 'error');
                 }
               }
 
+              // Carga y refresca el estado de todas las instancias
               async function loadInstances() {
                 try {
-                  const res = await makeApiRequest('/api/instances');
-                  setInstances(res.instances);
-                  console.log('Main polling: Instances loaded', res.instances); // LOG: Ver instancias cargadas
+                  const data = await makeApiRequest('/api/instances');
+                  setInstances(data.instances);
+                  console.log('Main polling: Instances loaded:', data.instances);
 
-                  // ✅ MEJORA: Lógica para cerrar el modal QR desde el polling principal
-                  // Esto cubre escenarios donde el polling del QR específico podría haberse detenido
-                  // o si el estado cambia por un webhook mientras el modal está abierto.
+                  // Lógica para cerrar el modal QR desde el polling principal
                   if (showQr && qrInstanceIdRef.current) {
-                    const currentQrInstance = res.instances.find(inst => String(inst.id) === String(qrInstanceIdRef.current)); // ✅ Usar String() para comparación segura de BigInt
-                    console.log('Main polling: Current QR instance state for QR modal:', currentQrInstance?.state); // LOG: Estado del QR en el polling principal
-
-                    // Si la instancia asociada al QR ya no es 'qr_code' o 'starting'
-                    if (currentQrInstance && currentQrInstance.state !== 'qr_code' && currentQrInstance.state !== 'starting') {
-                      console.log(\`Main polling: Closing QR modal as state is now \${currentQrInstance.state}. \`);
-                      clearInterval(pollRef.current); // Detener polling del QR si estaba activo
-                      pollRef.current = null;
-                      setShowQr(false);
-                      setQr('');
-                      qrInstanceIdRef.current = null;
-                    } else if (!currentQrInstance) {
-                      // ✅ MEJORA: Si la instancia del QR ya no existe (ej. fue eliminada del backend)
-                      console.log('Main polling: Closing QR modal as instance no longer exists in backend data.');
+                    const currentInstance = data.instances.find(inst => String(inst.id) === String(qrInstanceIdRef.current));
+                    if (currentInstance && currentInstance.state !== 'qr_code' && currentInstance.state !== 'starting') {
+                      console.log(`Main polling: Closing QR modal as state is now ${currentInstance.state}.`);
                       clearInterval(pollRef.current);
                       pollRef.current = null;
                       setShowQr(false);
                       setQr('');
                       qrInstanceIdRef.current = null;
+                      if (currentInstance.state === 'authorized') {
+                        showModal('Instancia conectada exitosamente!', 'success');
+                      } else {
+                        showModal('La conexión de la instancia cambió de estado. Verifique el panel.', 'info');
+                      }
+                    } else if (!currentInstance) {
+                      console.log('Main polling: Closing QR modal as instance no longer exists.');
+                      clearInterval(pollRef.current);
+                      pollRef.current = null;
+                      setShowQr(false);
+                      setQr('');
+                      qrInstanceIdRef.current = null;
+                      showModal('La instancia ha sido eliminada o no existe.', 'error');
                     }
                   }
                 } catch (e) {
-                  console.error('Failed to load instances in main polling', e); // LOG
+                  console.error('Failed to load instances in main polling:', e);
+                  // No mostrar modal de error aquí para evitar spam en el polling
                 }
               }
 
-              async function submit(e) {
+              // Crea una nueva instancia
+              async function createInstance(e) {
                 e.preventDefault();
                 try {
-                  const newInstanceData = { locationId, ...form };
-                  console.log('Submitting new instance:', newInstanceData); // LOG
-                  await makeApiRequest('/api/instances', { method: 'POST', body: JSON.stringify(newInstanceData) });
-                  setForm({ instanceId: '', token: '', instanceName: '' }); // Limpiar el formulario
-                  await loadInstances();
-                  alert('Instance added successfully!');
+                  const payload = { ...form, locationId };
+                  await makeApiRequest('/api/instances', {
+                    method: 'POST',
+                    body: JSON.stringify(payload),
+                  });
+                  showModal('Instancia creada exitosamente!', 'success');
+                  setForm({ instanceId: '', token: '', instanceName: '' });
+                  loadInstances(); // Recargar instancias después de crear una nueva
                 } catch (err) {
-                  console.error('Error adding instance:', err); // LOG
-                  alert(err.message);
+                  console.error('Error creating instance:', err);
+                  showModal('Error al crear instancia: ' + err.message, 'error');
                 }
               }
 
-              // ===============================================
-              // ✅ LÓGICA DE POLLING DEL QR REFINADA
-              // ===============================================
+              // Inicia el polling para el estado de una instancia específica (usado para QR)
               function startPolling(instanceId) {
-                // Asegurarse de que solo un sondeo se ejecute por QR a la vez
                 if (pollRef.current) {
                   clearInterval(pollRef.current);
-                  console.log('Cleared previous QR polling interval.'); // LOG
                 }
-                qrInstanceIdRef.current = instanceId; // Guarda el ID de la instancia cuyo QR se está mostrando
+                qrInstanceIdRef.current = instanceId;
                 
                 pollRef.current = setInterval(async () => {
                   try {
-                    const res = await makeApiRequest('/api/instances');
-                    // ✅ Usar String() para comparación segura de BigInt.
-                    // Esto es CRÍTICO si los IDs de Prisma son BigInt y se serializan a string en JSON.
-                    const updatedInstance = res.instances.find(inst => String(inst.id) === String(instanceId)); 
-                    
-                    console.log(\`QR polling for \${instanceId}: Fetched state \${updatedInstance?.state}\`); // LOG: Estado específico del QR
+                    const data = await makeApiRequest('/api/instances');
+                    const updatedInstance = data.instances.find(inst => String(inst.id) === String(instanceId));
+                    setInstances(data.instances); // Actualizar la lista de instancias para reflejar el estado más reciente
 
                     if (updatedInstance) {
-                      setInstances(res.instances); // Siempre actualiza la lista para reflejar el estado más reciente
-
-                      // ✅ Condición para detener el polling y cerrar el modal.
-                      // Si el estado NO es 'qr_code' Y NO es 'starting', entonces cerramos el modal.
-                      // Esto cubre 'authorized', 'notAuthorized', 'blocked', 'yellowCard'.
+                      console.log(`QR polling for ${instanceId}: Fetched state ${updatedInstance.state}`);
+                      // Si el estado NO es 'qr_code' Y NO es 'starting', cerramos el modal y el polling.
                       if (updatedInstance.state !== 'qr_code' && updatedInstance.state !== 'starting') {
-                        console.log(\`QR polling: State \${updatedInstance.state} detected, closing QR modal.\`);
+                        console.log(`QR polling: State ${updatedInstance.state} detected, closing QR modal.`);
                         clearInterval(pollRef.current);
-                        pollRef.current = null; // Asegura que la referencia se limpie
+                        pollRef.current = null;
                         setShowQr(false);
                         setQr('');
-                        qrInstanceIdRef.current = null; // Limpiar el ID de la instancia del QR
+                        qrInstanceIdRef.current = null;
+                        if (updatedInstance.state === 'authorized') {
+                          showModal('Instancia conectada exitosamente!', 'success');
+                        } else {
+                          showModal('La conexión de la instancia cambió de estado. Verifique el panel.', 'info');
+                        }
                       }
-                      // No necesitamos una condición 'if (updatedInstance.state === 'authorized')' separada aquí,
-                      // ya que la condición superior ya lo maneja de forma más general.
                     } else {
-                      // ✅ MEJORA: Si la instancia ya no se encuentra (ej. fue eliminada del backend)
-                      console.log(\`QR polling: Instance \${instanceId} not found in fetched data, stopping polling and closing QR.\`);
+                      // Si la instancia ya no se encuentra (ej. fue eliminada del backend)
+                      console.log(`QR polling: Instance ${instanceId} not found in fetched data, stopping polling and closing QR.`);
                       clearInterval(pollRef.current);
                       pollRef.current = null;
                       setShowQr(false);
                       setQr('');
                       qrInstanceIdRef.current = null;
+                      showModal('La instancia ha sido eliminada o no existe.', 'error');
                     }
                   } catch (error) {
-                    console.error('Error during QR polling:', error); // LOG
-                    // ✅ MEJORA: En caso de error en el polling del QR, también cerramos el modal
-                    // para evitar que se quede atascado y limpiamos el polling.
+                    console.error('Error during QR polling:', error);
                     clearInterval(pollRef.current);
                     pollRef.current = null;
                     setShowQr(false);
                     setQr('');
                     qrInstanceIdRef.current = null;
+                    showModal('Error al verificar estado del QR. Intente de nuevo.', 'error');
                   }
-                }, 2000); // ✅ MEJORA: Sondea un poco más rápido (cada 2 segundos) para transiciones rápidas
+                }, 2000); // Sondea cada 2 segundos para una respuesta rápida
               }
 
+              // Conecta una instancia (obtiene y muestra el QR)
               async function connectInstance(id) {
+                setQrLoading(true); // Iniciar loading
                 setQr(''); // Limpiar cualquier QR previo
-                setShowQr(true); // Mostrar el modal del QR inmediatamente
-                if (pollRef.current) {
-                  clearInterval(pollRef.current);
-                  console.log('Cleared previous polling before new QR request.'); // LOG
-                }
+                setShowQr(true); // Mostrar el contenedor del QR
                 qrInstanceIdRef.current = id; // Asignar el ID de la instancia al ref para el QR
 
                 try {
-                  console.log(\`Attempting to fetch QR for instance ID: \${id}\`); // LOG
-                  // La petición para obtener el QR / iniciar conexión
+                  console.log(`Attempting to fetch QR for instance ID: ${id}`);
                   const res = await makeApiRequest('/api/qr/' + id);
-                  console.log(\`QR API response for \${id}:\`, res); // LOG: Respuesta del QR completa
+                  console.log(`QR API response for ${id}:`, res);
 
                   if (res.type === 'qr') {
-                    const qrData = res.data.startsWith('data:image') ? res.data : 'data:image/png;base64,' + res.data;
-                    setQr(qrData);
-                    console.log('QR data set to state.'); // LOG
+                    setQr(res.data); // Asume que res.data ya es un data:image/png;base64
                   } else if (res.type === 'code') {
+                    // Si Evolution API devuelve un pairing code, lo convertimos a QR
                     const qrImage = await generateQrFromString(res.data);
                     setQr(qrImage);
-                    console.log('Pairing code QR image generated and set to state.'); // LOG
                   } else {
                     throw new Error('Unexpected QR response format. Type was: ' + res.type);
                   }
-                  
+                  setQrLoading(false); // Detener loading
+
                   // Iniciar el sondeo para el estado de la instancia inmediatamente después de obtener el QR
                   startPolling(id);
 
                 } catch (err) {
-                  console.error('Error obtaining QR:', err); // LOG detallado
+                  setQrLoading(false); // Detener loading en caso de error
+                  console.error('Error obtaining QR:', err);
                   setQr('');
                   setShowQr(false); // Asegurarse de que el modal se cierre si la petición de QR falla.
-                  qrInstanceIdRef.current = null; // Limpiar el ID de la instancia del QR
-                  alert('Error obteniendo QR: ' + err.message);
+                  qrInstanceIdRef.current = null;
+                  showModal('Error obteniendo QR: ' + err.message, 'error');
+                  if (pollRef.current) {
+                    clearInterval(pollRef.current);
+                    pollRef.current = null;
+                  }
                 }
               }
 
+              // Genera una imagen QR a partir de una cadena de texto (para pairing codes)
               async function generateQrFromString(text) {
                 return new Promise((resolve, reject) => {
                   if (!window.QRCode) {
-                    console.error('QRCode library not loaded!'); // LOG
+                    console.error('QRCode library not loaded!');
                     return reject(new Error('QRCode library not loaded'));
                   }
                   const container = document.createElement('div');
@@ -347,76 +452,139 @@ export class CustomPageController {
                     const img = container.querySelector('img') || container.querySelector('canvas');
                     if (img) {
                       const dataUrl = img.src || img.toDataURL('image/png');
-                      console.log('Generated QR from string successfully.'); // LOG
+                      console.log('Generated QR from string successfully.');
                       resolve(dataUrl);
                     } else {
-                      console.error('Failed to find QR image in container after generation.'); // LOG
+                      console.error('Failed to find QR image in container after generation.');
                       reject(new Error('Failed to generate QR image'));
                     }
                   }, 100);
                 });
               }
 
+              // Desconecta una instancia (logout)
               async function logoutInstance(id) {
-                if (!confirm('¿Desconectar instancia?')) return;
-                try {
-                  console.log(\`Attempting to logout instance ID: \${id}\`); // LOG
-                  await makeApiRequest('/api/instances/' + id + '/logout', { method: 'DELETE' });
-                  console.log(\`Instance \${id} logout command sent successfully. Reloading instances...\`); // LOG
-                  // Tras el logout, recargar instancias. El polling principal se encargará de actualizar el estado.
-                  await loadInstances(); 
-                  alert('Instance logout command sent. State will update shortly.');
-                } catch (err) {
-                  console.error('Error disconnecting instance:', err); // LOG
-                  alert('Error al desconectar: ' + err.message);
-                }
+                showModal(
+                  '¿Estás seguro de que quieres desconectar esta instancia? Esto cerrará la sesión de WhatsApp y requerirá un nuevo escaneo de QR para reconectar.',
+                  'confirm',
+                  async () => { // onConfirm callback
+                    closeModal(); // Cerrar el modal de confirmación
+                    try {
+                      console.log(`Attempting to logout instance ID: ${id}`);
+                      await makeApiRequest('/api/instances/' + id + '/logout', { method: 'DELETE' });
+                      console.log(`Instance ${id} logout command sent successfully. Reloading instances...`);
+                      showModal('Comando de desconexión de instancia enviado. El estado se actualizará en breve y requerirá un nuevo escaneo.', 'success');
+                      loadInstances(); // Recargar instancias para reflejar el cambio de estado
+                    } catch (err) {
+                      console.error('Error disconnecting instance:', err);
+                      showModal('Error al desconectar: ' + err.message, 'error');
+                    }
+                  },
+                  () => closeModal() // onCancel callback
+                );
               }
 
+              // Elimina una instancia permanentemente
               async function deleteInstance(id) {
-                if (!confirm('¿Eliminar instancia permanentemente?')) return;
-                try {
-                  console.log(\`Attempting to delete instance ID: \${id}\`); // LOG
-                  await makeApiRequest('/api/instances/' + id, { method: 'DELETE' });
-                  console.log(\`Instance \${id} delete command sent. Reloading instances...\`); // LOG
-                  await loadInstances(); // Recargar instancias para reflejar la eliminación
-                  alert('Instance deletion command sent. Panel will update shortly.');
-                } catch (err) {
-                  console.error('Error deleting instance:', err); // LOG
-                  alert('Error al eliminar: ' + err.message);
-                }
+                showModal(
+                  '¿Estás seguro de que quieres ELIMINAR esta instancia? Esta acción es permanente y borrará la instancia de Evolution API y de la base de datos.',
+                  'confirm',
+                  async () => { // onConfirm callback
+                    closeModal();
+                    try {
+                      console.log(`Attempting to delete instance ID: ${id}`);
+                      await makeApiRequest('/api/instances/' + id, { method: 'DELETE' });
+                      console.log(`Instance ${id} delete command sent. Reloading instances...`);
+                      showModal('Instancia eliminada exitosamente!', 'success');
+                      loadInstances(); // Recargar instancias después de eliminar
+                    } catch (err) {
+                      console.error('Error deleting instance:', err);
+                      showModal('Error al eliminar instancia: ' + err.message, 'error');
+                    }
+                  },
+                  () => closeModal() // onCancel callback
+                );
               }
 
               return (
-                <div className="space-y-6">
-                  <h1 className="text-2xl font-semibold text-center">WLink Bridge Manager</h1>
-                  <div className="bg-white rounded-2xl shadow-md p-6 space-y-4">
-                    <h2 className="text-xl font-semibold">Your Instances</h2>
+                <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8 space-y-6 border border-gray-200 w-full">
+                  <h1 className="text-3xl font-bold text-center text-gray-800 mb-6">WLink Bridge Manager</h1>
+
+                  {/* Sección de Añadir Nueva Instancia */}
+                  <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Add New Instance</h2>
+                    <form onSubmit={createInstance} className="space-y-4">
+                      <div>
+                        <label htmlFor="instanceName" className="block text-sm font-medium text-gray-700">Instance Name</label>
+                        <input
+                          type="text"
+                          id="instanceName"
+                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          value={form.instanceName}
+                          onChange={(e) => setForm({ ...form, instanceName: e.target.value })}
+                          placeholder="My WhatsApp Instance"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="instanceId" className="block text-sm font-medium text-gray-700">Evolution Instance ID</label>
+                        <input
+                          type="text"
+                          id="instanceId"
+                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          value={form.instanceId}
+                          onChange={(e) => setForm({ ...form, instanceId: e.target.value })}
+                          placeholder="e.g., 123456"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="token" className="block text-sm font-medium text-gray-700">Evolution API Token</label>
+                        <input
+                          type="text"
+                          id="token"
+                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          value={form.token}
+                          onChange={(e) => setForm({ ...form, token: e.target.value })}
+                          placeholder="e.g., abcdef123456"
+                          required
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out"
+                      >
+                        Add Instance
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Sección de Instancias Existentes */}
+                  <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Your Instances</h2>
                     <div className="space-y-4">
-                      {instances.length === 0 && <p className="text-gray-500">No instances added.</p>}
+                      {instances.length === 0 && <p className="text-gray-500 text-center py-4">No instances added yet. Add one above!</p>}
                       
                       {instances.map((inst) => (
-                        <div key={inst.id} className="flex justify-between items-center p-4 border rounded-xl">
-                          <div>
-                            <p className="font-semibold">{inst.name || 'Unnamed'}</p>
-                            <p className="text-sm text-gray-400">ID local: {inst.id}</p>
+                        <div key={inst.id} className="flex flex-col sm:flex-row justify-between items-center p-4 border border-gray-200 rounded-xl bg-white shadow-sm">
+                          <div className="text-center sm:text-left mb-3 sm:mb-0">
+                            <p className="font-semibold text-lg text-gray-800">{inst.name || 'Unnamed Instance'}</p>
+                            <p className="text-sm text-gray-400">Local ID: {inst.id}</p>
                             <p className="text-sm text-gray-500">GUID: {inst.guid}</p>
                             <span
                               className={
-                                "text-xs px-2 py-1 rounded-full " +
+                                "mt-1 inline-block text-xs px-3 py-1 rounded-full font-medium " +
                                 (inst.state === 'authorized'
-                                  ? 'bg-green-200 text-green-800' // Conectado y autorizado
+                                  ? 'bg-green-100 text-green-800' // Conectado y autorizado
                                   : inst.state === 'qr_code' || inst.state === 'starting'
-                                  ? 'bg-yellow-200 text-yellow-800' // Esperando acción (QR) o iniciando
+                                  ? 'bg-yellow-100 text-yellow-800' // Esperando acción (QR) o iniciando
                                   : inst.state === 'notAuthorized'
-                                  ? 'bg-red-200 text-red-800' // Desconectado (rojo para mayor visibilidad)
+                                  ? 'bg-red-100 text-red-800' // Desconectado (rojo para mayor visibilidad)
                                   : inst.state === 'yellowCard' || inst.state === 'blocked'
                                   ? 'bg-red-500 text-white' // Estados de error o bloqueado (más oscuro)
                                   : 'bg-gray-200 text-gray-800') // Para cualquier otro estado no mapeado
                               }
                             >
-                              {/* =============================================== */}
-                              {/* ✅ VISUALIZACIÓN DEL ESTADO (FINAL) */}
-                              {/* =============================================== */}
                               {
                                 // Muestra "Awaiting Scan" solo si el modal de QR está abierto y es para esta instancia.
                                 // Comparamos los IDs como strings para evitar problemas de BigInt.
@@ -436,25 +604,25 @@ export class CustomPageController {
                               }
                             </span>
                           </div>
-                          <div className="flex gap-2">
+                          <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto mt-4 sm:mt-0">
                             {inst.state === 'authorized' ? ( // Solo 'authorized' debe poder desconectarse (hacer logout)
                               <button
                                 onClick={() => logoutInstance(inst.id)}
-                                className="px-3 py-1 rounded-xl bg-yellow-500 text-white"
+                                className="w-full sm:w-auto px-4 py-2 rounded-lg bg-yellow-500 text-white font-semibold shadow-md hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 transition duration-150 ease-in-out"
                               >
                                 Logout
                               </button>
                             ) : (
                               <button
                                 onClick={() => connectInstance(inst.id)}
-                                className="px-3 py-1 rounded-xl bg-green-600 text-white"
+                                className="w-full sm:w-auto px-4 py-2 rounded-lg bg-green-600 text-white font-semibold shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
                               >
                                 Connect
                               </button>
                             )}
                             <button
                               onClick={() => deleteInstance(inst.id)}
-                              className="px-3 py-1 rounded-xl bg-red-600 text-white"
+                              className="w-full sm:w-auto px-4 py-2 rounded-lg bg-red-600 text-white font-semibold shadow-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition duration-150 ease-in-out"
                             >
                               Delete
                             </button>
@@ -463,51 +631,69 @@ export class CustomPageController {
                       ))}
                     </div>
                   </div>
-                  <div className="bg-white rounded-2xl shadow-md p-6 space-y-4">
-                    <h2 className="text-xl font-semibold">Add New Instance</h2>
-                    <form onSubmit={submit} className="grid gap-4">
-                      <input
-                        required
-                        value={form.instanceId}
-                        onChange={(e) => setForm({ ...form, instanceId: e.target.value })}
-                        placeholder="Instance ID (GUID)"
-                        className="border p-2 rounded-xl"
-                      />
-                      <input
-                        required
-                        value={form.token}
-                        onChange={(e) => setForm({ ...form, token: e.target.value })}
-                        placeholder="API Token"
-                        className="border p-2 rounded-xl"
-                      />
-                      <input
-                        required
-                        value={form.instanceName}
-                        onChange={(e) => setForm({ ...form, instanceName: e.target.value })}
-                        placeholder="Instance Name (e.g., YC2)"
-                        className="border p-2 rounded-xl"
-                      />
-                      <button className="px-4 py-2 rounded-xl bg-indigo-600 text-white">Add Instance</button>
-                    </form>
-                  </div>
+
+                  {/* Modal de QR Code */}
                   {showQr && (
-                    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center" 
-                         onClick={() => { 
-                           console.log('Overlay clicked: Closing QR modal.'); // LOG: Cierre por overlay
-                           setShowQr(false); 
-                           if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-                           setQr(''); 
-                           qrInstanceIdRef.current = null; // Limpiar el ID de la instancia del QR
-                         }}>
-                      <div className="bg-white p-6 rounded-2xl shadow-md text-center space-y-4" onClick={(e) => e.stopPropagation()}>
-                        {qr ? <img src={qr} className="mx-auto" /> : <p>Loading QR...</p>}
-                        <button onClick={() => { 
-                          console.log('Close button clicked: Closing QR modal.'); // LOG: Cierre por botón
-                          setShowQr(false); 
-                          if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-                          setQr(''); 
-                          qrInstanceIdRef.current = null; // Limpiar el ID de la instancia del QR
-                        }} className="px-3 py-1 rounded-xl bg-gray-700 text-white">Close</button>
+                    <div className="modal-overlay" onClick={() => {
+                      console.log('QR Overlay clicked: Closing QR modal.');
+                      setShowQr(false);
+                      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+                      setQr('');
+                      qrInstanceIdRef.current = null;
+                    }}>
+                      <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+                        <h2 className="text-2xl font-bold text-gray-800 mb-4">Scan QR Code</h2>
+                        {qrLoading ? (
+                          <div className="flex flex-col items-center justify-center h-48">
+                            <div className="spinner"></div>
+                            <p className="mt-4 text-gray-600 text-lg">Loading QR...</p>
+                          </div>
+                        ) : qr ? (
+                          <div className="flex justify-center items-center h-64 w-64 mx-auto p-2 border border-gray-300 rounded-md bg-white">
+                            <div ref={qrCodeDivRef} className="w-full h-full flex items-center justify-center"></div>
+                          </div>
+                        ) : (
+                          <p className="text-red-500 text-lg">Failed to load QR code. Please try again.</p>
+                        )}
+                        <button
+                          onClick={() => {
+                            console.log('QR Close button clicked: Closing QR modal.');
+                            setShowQr(false);
+                            if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+                            setQr('');
+                            qrInstanceIdRef.current = null;
+                          }}
+                          className="mt-6 px-6 py-2 rounded-lg bg-gray-700 text-white font-semibold shadow-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 transition duration-150 ease-in-out"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Modal de Alerta/Confirmación General */}
+                  {modal.show && (
+                    <div className="modal-overlay">
+                      <div className="modal-content">
+                        <p className="text-lg font-medium mb-6 text-gray-700">{modal.message}</p>
+                        <div className="flex justify-center gap-4">
+                          {modal.type === 'confirm' && (
+                            <button
+                              onClick={modal.onCancel}
+                              className="px-6 py-2 rounded-lg bg-gray-300 text-gray-800 font-semibold hover:bg-gray-400 transition duration-150 ease-in-out"
+                            >
+                              Cancel
+                            </button>
+                          )}
+                          <button
+                            onClick={modal.onConfirm || closeModal} // Si es confirm, usa onConfirm, sino closeModal
+                            className={`px-6 py-2 rounded-lg text-white font-semibold shadow-md transition duration-150 ease-in-out ${
+                              modal.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                            }`}
+                          >
+                            {modal.type === 'confirm' ? 'Confirm' : 'OK'}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -521,3 +707,4 @@ export class CustomPageController {
     `;
   }
 }
+

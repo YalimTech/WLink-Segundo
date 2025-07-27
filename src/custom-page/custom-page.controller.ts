@@ -76,7 +76,7 @@ export class CustomPageController {
       }
 
       const user = await this.prisma.findUser(locationId);
-      this.logger.log(`User found in DB for locationId ${locationId}: ${user ? user.id : 'None'}`);
+      console.log('User found in DB:', user ? user.id : 'None');
 
       return res.json({
         success: true,
@@ -114,16 +114,11 @@ export class CustomPageController {
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>WLink Bridge - Manager</title>
-          <!-- Tailwind CSS CDN para estilos rápidos y responsivos -->
           <script src="https://cdn.tailwindcss.com"></script>
-          <!-- Fuentes de Google Fonts (Inter) -->
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-          <!-- React y ReactDOM CDN -->
           <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
           <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-          <!-- Babel para transpilar JSX en el navegador -->
           <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-          <!-- QRCode.js para generar códigos QR -->
           <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
           <style>
             body {
@@ -265,14 +260,15 @@ export class CustomPageController {
                   data = await response.json();
                 } catch (e) {
                   // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                  console.error(`Error parsing JSON from \${path}. Status: \${response.status} \${response.statusText}`, e, response);
+                  console.error(\`Error parsing JSON from \\\${path}. Status: \\\${response.status} \\\${response.statusText}\`, e, response);
                   throw new Error(response.statusText || 'Invalid JSON response from server');
                 }
                 if (!response.ok) {
                   // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                  console.error(`API request to \${path} failed. Status: \${response.status}. Response:`, data);
+                  console.error(\`API request to \\\${path} failed. Status: \\\${response.status}. Response:\`, data);
                   throw new Error(data.message || 'API request failed');
                 }
+                console.log(\`API request to \\\${path} successful. Response:\`, data);
                 return data;
               }
 
@@ -301,7 +297,7 @@ export class CustomPageController {
                     const currentInstance = data.instances.find(inst => String(inst.id) === String(qrInstanceIdRef.current));
                     if (currentInstance && currentInstance.state !== 'qr_code' && currentInstance.state !== 'starting') {
                       // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                      console.log(`Main polling: Closing QR modal as state is now \${currentInstance.state}.`);
+                      console.log(\`Main polling: Closing QR modal as state is now \\\${currentInstance.state}.\`);
                       clearInterval(pollRef.current);
                       pollRef.current = null;
                       setShowQr(false);
@@ -361,11 +357,11 @@ export class CustomPageController {
 
                     if (updatedInstance) {
                       // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                      console.log(`QR polling for \${instanceId}: Fetched state \${updatedInstance.state}`);
+                      console.log(\`QR polling for \\\${instanceId}: Fetched state \\\${updatedInstance.state}\`);
                       // Si el estado NO es 'qr_code' Y NO es 'starting', cerramos el modal y el polling.
                       if (updatedInstance.state !== 'qr_code' && updatedInstance.state !== 'starting') {
                         // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                        console.log(`QR polling: State \${updatedInstance.state} detected, closing QR modal.`);
+                        console.log(\`QR polling: State \\\${updatedInstance.state} detected, closing QR modal.\`);
                         clearInterval(pollRef.current);
                         pollRef.current = null;
                         setShowQr(false);
@@ -379,7 +375,7 @@ export class CustomPageController {
                       }
                     } else {
                       // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                      console.log(`QR polling: Instance \${instanceId} not found in fetched data, stopping polling and closing QR.`);
+                      console.log(\`QR polling: Instance \\\${instanceId} not found in fetched data, stopping polling and closing QR.\`);
                       clearInterval(pollRef.current);
                       pollRef.current = null;
                       setShowQr(false);
@@ -408,10 +404,10 @@ export class CustomPageController {
 
                 try {
                   // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                  console.log(`Attempting to fetch QR for instance ID: \${id}`);
+                  console.log(\`Attempting to fetch QR for instance ID: \\\${id}\`);
                   const res = await makeApiRequest('/api/qr/' + id);
                   // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                  console.log(`QR API response for \${id}:`, res);
+                  console.log(\`QR API response for \\\${id}:\`, res);
 
                   if (res.type === 'qr') {
                     setQr(res.data); // Asume que res.data ya es un data:image/png;base64
@@ -479,10 +475,10 @@ export class CustomPageController {
                     closeModal(); // Cerrar el modal de confirmación
                     try {
                       // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                      console.log(`Attempting to logout instance ID: \${id}`);
+                      console.log(\`Attempting to logout instance ID: \\\${id}\`);
                       await makeApiRequest('/api/instances/' + id + '/logout', { method: 'DELETE' });
                       // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                      console.log(`Instance \${id} logout command sent successfully. Reloading instances...`);
+                      console.log(\`Instance \\\${id} logout command sent successfully. Reloading instances...\`);
                       showModal('Comando de desconexión de instancia enviado. El estado se actualizará en breve y requerirá un nuevo escaneo.', 'success');
                       loadInstances(); // Recargar instancias para reflejar el cambio de estado
                     } catch (err) {
@@ -503,10 +499,10 @@ export class CustomPageController {
                     closeModal();
                     try {
                       // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                      console.log(`Attempting to delete instance ID: \${id}`);
+                      console.log(\`Attempting to delete instance ID: \\\${id}\`);
                       await makeApiRequest('/api/instances/' + id, { method: 'DELETE' });
                       // CORRECCIÓN: Escapar backticks y ${} en la cadena de log
-                      console.log(`Instance \${id} delete command sent. Reloading instances...`);
+                      console.log(\`Instance \\\${id} delete command sent. Reloading instances...\`);
                       showModal('Instancia eliminada exitosamente!', 'success');
                       loadInstances(); // Recargar instancias después de eliminar
                     } catch (err) {
@@ -699,9 +695,9 @@ export class CustomPageController {
                           )}
                           <button
                             onClick={modal.onConfirm || closeModal} // Si es confirm, usa onConfirm, sino closeModal
-                            className={`px-6 py-2 rounded-lg text-white font-semibold shadow-md transition duration-150 ease-in-out ${
+                            className={`px-6 py-2 rounded-lg text-white font-semibold shadow-md transition duration-150 ease-in-out \\\${
                               modal.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'
-                            }`}
+                            }\`}
                           >
                             {modal.type === 'confirm' ? 'Confirm' : 'OK'}
                           </button>

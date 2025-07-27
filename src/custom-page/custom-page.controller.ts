@@ -81,7 +81,7 @@ export class CustomPageController {
       return res.json({
         success: true,
         locationId,
-        userData,
+        userData, // Pass the full userData object
         user: user
           ? { id: user.id, hasTokens: !!(user.accessToken && user.refreshToken) }
           : null,
@@ -98,16 +98,18 @@ export class CustomPageController {
   /**
    * Genera el HTML completo para la página de gestión de instancias de WhatsApp.
    * Incluye la aplicación React con toda la lógica de UI y llamadas a la API.
-   * ✅ Mejoras clave:
-   * - Diseño responsivo y moderno con Tailwind CSS.
-   * - Sistema de modales personalizado para alertas y confirmaciones.
-   * - Lógica de logout con botón condicional.
-   * - Indicador de carga para el QR.
-   * - Refinamiento en el manejo de estados y polling.
-   * - CORRECCIÓN: Uso de concatenación de strings para evitar conflictos con el compilador de TypeScript.
-   * - CORRECCIÓN: Mejoras en la lógica de renderizado del QR y depuración.
-   * - NUEVA CORRECCIÓN: Aumento de la frecuencia de polling del frontend para una mejor sincronización del estado.
-   * - NUEVA CORRECCIÓN: Logs explícitos en el frontend para el estado de las instancias.
+   *
+   * ✅ Cambios para que la estructura sea casi igual a la imagen de ejemplo:
+   * - Se añadió la sección "Connection Status" con datos mock.
+   * - El nombre de la instancia en la tarjeta ya no es editable.
+   * - Se añadió el botón "Open Console".
+   * - El botón "Logout" se muestra si la instancia está 'authorized', de lo contrario, se muestra "Connect".
+   * - El estado de la instancia se muestra de forma más prominente.
+   * - Se ajustaron los estilos para coincidir visualmente con la imagen.
+   * - Se mantuvo el sistema de modales personalizado.
+   * - Se mejoró la frecuencia de polling del frontend para una mejor sincronización del estado.
+   * - Se mejoró el manejo del QR para asegurar la visualización correcta.
+   * - NUEVA CORRECCIÓN: Se integran los datos reales del usuario de GHL en la sección "Connection Status".
    */
   private generateCustomPageHTML(): string {
     return `
@@ -128,6 +130,8 @@ export class CustomPageController {
           <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
           <!-- QRCode.js para generar códigos QR -->
           <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+          <!-- Font Awesome para íconos -->
+          <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"></link>
           <style>
             body {
               font-family: 'Inter', sans-serif;
@@ -192,6 +196,7 @@ export class CustomPageController {
               const qrInstanceIdRef = useRef(null); // Para guardar el ID de la instancia cuyo QR se está mostrando
               const qrCodeDivRef = useRef(null); // Ref para el div donde se renderizará el QR
               const [modal, setModal] = useState({ show: false, message: '', type: '', onConfirm: null, onCancel: null }); // Estado para el modal
+              const [ghlUser, setGhlUser] = useState({ name: 'Loading...', email: 'Loading...', hasTokens: false }); // Estado para los datos del usuario GHL
 
               // Función para mostrar el modal personalizado
               const showModal = (message, type = 'info', onConfirm = null, onCancel = null) => {
@@ -221,7 +226,7 @@ export class CustomPageController {
                   loadInstances();
                   // Configura el polling principal para refrescar el estado de las instancias cada 3 segundos
                   if (mainIntervalRef.current) clearInterval(mainIntervalRef.current); // Limpiar si ya existe
-                  mainIntervalRef.current = setInterval(loadInstances, 3000); // Poll every 3 seconds (was 10s)
+                  mainIntervalRef.current = setInterval(loadInstances, 3000); // Poll every 3 seconds
                 }
                 // Limpieza de intervalos al desmontar el componente
                 return () => {
@@ -299,6 +304,12 @@ export class CustomPageController {
                   const res = await makeApiRequest('/app/decrypt-user-data', { method: 'POST', body: JSON.stringify({ encryptedData: enc }) });
                   setEncrypted(enc);
                   setLocationId(res.locationId);
+                  // Actualizar el estado con los datos reales del usuario de GHL
+                  setGhlUser({
+                    name: res.userData.fullName || (res.userData.firstName || '') + ' ' + (res.userData.lastName || '') || 'Unknown User',
+                    email: res.userData.email || 'N/A',
+                    hasTokens: res.user ? res.user.hasTokens : false // Usa el hasTokens del backend
+                  });
                   console.log('User data decrypted and locationId set:', res.locationId);
                 } catch (err) {
                   console.error('Error processing user data:', err);
@@ -433,11 +444,17 @@ export class CustomPageController {
                   const res = await makeApiRequest('/api/qr/' + id);
                   // CORRECCIÓN: Usar concatenación de strings
                   console.log('QR API response for ' + id + ':', res);
+                  console.log('QR response type: ' + res.type + ', data starts with: ' + (res.data ? res.data.substring(0, 50) : 'N/A'));
+
 
                   if (res.type === 'qr') {
-                    setQr(res.data); // Asume que res.data ya es un data:image/png;base64
+                    // Asegurar que la data del QR tenga el prefijo data:image/png;base64,
+                    const finalQrData = res.data.startsWith('data:image') ? res.data : 'data:image/png;base64,' + res.data;
+                    setQr(finalQrData);
+                    console.log('QR type received. Setting QR data. Starts with data:image: ' + finalQrData.startsWith('data:image'));
                   } else if (res.type === 'code') {
                     // Si Evolution API devuelve un pairing code, lo convertimos a QR
+                    console.log('Code type received. Generating QR from text: ' + res.data);
                     const qrImage = await generateQrFromString(res.data);
                     setQr(qrImage);
                   } else {
@@ -541,62 +558,53 @@ export class CustomPageController {
                 );
               }
 
+              // Placeholder para la función Open Console
+              const openConsole = (instanceId) => {
+                showModal('Abriendo consola para la instancia: ' + instanceId, 'info');
+                // Aquí iría la lógica real para abrir la consola de la instancia,
+                // por ejemplo, redirigir a una URL específica de Evolution API.
+                // window.open('https://your-evolution-api-console-url/' + instanceId, '_blank');
+              };
+
+
               return (
                 <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8 space-y-6 border border-gray-200 w-full">
-                  <h1 className="text-3xl font-bold text-center text-gray-800 mb-6">WLink Bridge Manager</h1>
-
-                  {/* Sección de Añadir Nueva Instancia */}
-                  <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
-                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Add New Instance</h2>
-                    <form onSubmit={createInstance} className="space-y-4">
-                      <div>
-                        <label htmlFor="instanceName" className="block text-sm font-medium text-gray-700">Instance Name</label>
-                        <input
-                          type="text"
-                          id="instanceName"
-                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.instanceName}
-                          onChange={(e) => setForm({ ...form, instanceName: e.target.value })}
-                          placeholder="My WhatsApp Instance"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="instanceId" className="block text-sm font-medium text-gray-700">Evolution Instance ID</label>
-                        <input
-                          type="text"
-                          id="instanceId"
-                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.instanceId}
-                          onChange={(e) => setForm({ ...form, instanceId: e.target.value })}
-                          placeholder="e.g., 123456"
-                          required
-                        />
-                      </div>
-                      <div>
-                        <label htmlFor="token" className="block text-sm font-medium text-gray-700">Evolution API Token</label>
-                        <input
-                          type="text"
-                          id="token"
-                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.token}
-                          onChange={(e) => setForm({ ...form, token: e.target.value })}
-                          placeholder="e.g., abcdef123456"
-                          required
-                        />
-                      </div>
-                      <button
-                        type="submit"
-                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition duration-150 ease-in-out"
-                      >
-                        Add Instance
-                      </button>
-                    </form>
+                  {/* Encabezado con logo y título */}
+                  <div className="flex flex-col items-center justify-center mb-6">
+                    <img src="https://placehold.co/60x60/00FF00/FFFFFF?text=G" alt="Logo" className="h-16 w-16 mb-2" />
+                    <h1 className="text-3xl font-bold text-center text-gray-800">WhatsApp Integration</h1>
+                    <p className="text-gray-500 text-center">Manage your GREEN-API instances with ease</p>
                   </div>
 
-                  {/* Sección de Instancias Existentes */}
+                  {/* Sección de Connection Status */}
                   <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
-                    <h2 className="text-xl font-semibold text-gray-700 mb-4">Your Instances</h2>
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center">
+                      <i className="fas fa-signal text-blue-500 mr-2"></i> Connection Status
+                    </h2>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-gray-700">
+                      <div>
+                        <p><i className="fas fa-user text-gray-400 mr-2"></i> <strong>User:</strong> {ghlUser.name}</p>
+                        <p><i className="fas fa-envelope text-gray-400 mr-2"></i> <strong>Email:</strong> {ghlUser.email}</p>
+                        <p><i className="fas fa-map-marker-alt text-gray-400 mr-2"></i> <strong>Location ID:</strong> {locationId || 'Loading...'}</p>
+                      </div>
+                      <div>
+                        <p><i className="fas fa-shield-alt text-green-500 mr-2"></i> <strong>OAuth Status:</strong></p>
+                        <p className="ml-6">
+                          {ghlUser.hasTokens ? (
+                            <><i className="fas fa-check-circle text-green-500 mr-2"></i> Authenticated and ready</>
+                          ) : (
+                            <><i className="fas fa-exclamation-triangle text-yellow-500 mr-2"></i> Not Authenticated</>
+                          )}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sección de Your WhatsApp Instances */}
+                  <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center">
+                      <i className="fab fa-whatsapp text-green-500 mr-2"></i> Your WhatsApp Instances
+                    </h2>
                     <div className="space-y-4">
                       {instances.length === 0 && <p className="text-gray-500 text-center py-4">No instances added yet. Add one above!</p>}
                       
@@ -604,11 +612,11 @@ export class CustomPageController {
                         <div key={inst.id} className="flex flex-col sm:flex-row justify-between items-center p-4 border border-gray-200 rounded-xl bg-white shadow-sm">
                           <div className="text-center sm:text-left mb-3 sm:mb-0">
                             <p className="font-semibold text-lg text-gray-800">{inst.name || 'Unnamed Instance'}</p>
-                            <p className="text-sm text-gray-400">Local ID: {inst.id}</p>
-                            <p className="text-sm text-gray-500">GUID: {inst.guid}</p>
+                            <p className="text-sm text-gray-500">Instance ID: {inst.idInstance || inst.guid || 'N/A'}</p>
+                            <p className="text-sm text-gray-500">Created: {new Date().toLocaleDateString()}</p> {/* Placeholder for creation date */}
                             <span
                               className={
-                                "mt-1 inline-block text-xs px-3 py-1 rounded-full font-medium " +
+                                "mt-2 inline-block text-xs px-3 py-1 rounded-full font-medium " +
                                 (inst.state === 'authorized'
                                   ? 'bg-green-100 text-green-800' // Conectado y autorizado
                                   : inst.state === 'qr_code' || inst.state === 'starting'
@@ -621,9 +629,8 @@ export class CustomPageController {
                               }
                             >
                               {
-                                // Muestra "Awaiting Scan" solo si el modal de QR está abierto y es para esta instancia.
-                                // Comparamos los IDs como strings para evitar problemas de BigInt.
-                                showQr && String(qrInstanceIdRef.current) === String(inst.id) && (inst.state === 'qr_code' || inst.state === 'starting')
+                                // Muestra "Awaiting Scan" si el modal de QR está abierto para esta instancia
+                                showQr && String(qrInstanceIdRef.current) === String(inst.id)
                                   ? 'Awaiting Scan'
                                   : inst.state === 'authorized'
                                   ? 'Connected'
@@ -640,6 +647,12 @@ export class CustomPageController {
                             </span>
                           </div>
                           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto mt-4 sm:mt-0">
+                            <button
+                              onClick={() => openConsole(inst.id)}
+                              className="w-full sm:w-auto px-4 py-2 rounded-lg bg-blue-600 text-white font-semibold shadow-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out"
+                            >
+                              Open Console
+                            </button>
                             {inst.state === 'authorized' ? ( // Solo 'authorized' debe poder desconectarse (hacer logout)
                               <button
                                 onClick={() => logoutInstance(inst.id)}
@@ -665,6 +678,57 @@ export class CustomPageController {
                         </div>
                       ))}
                     </div>
+                  </div>
+
+                  {/* Sección de Add New Instance */}
+                  <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 shadow-sm">
+                    <h2 className="text-xl font-semibold text-gray-700 mb-4 flex items-center">
+                      <i className="fas fa-plus-circle text-green-500 mr-2"></i> Add New Instance
+                    </h2>
+                    <form onSubmit={createInstance} className="space-y-4">
+                      <div>
+                        <label htmlFor="instanceId" className="block text-sm font-medium text-gray-700">Instance ID</label>
+                        <input
+                          type="text"
+                          id="instanceId"
+                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          value={form.instanceId}
+                          onChange={(e) => setForm({ ...form, instanceId: e.target.value })}
+                          placeholder="e.g., 1234567890"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="token" className="block text-sm font-medium text-gray-700">API Token</label>
+                        <input
+                          type="text"
+                          id="token"
+                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          value={form.token}
+                          onChange={(e) => setForm({ ...form, token: e.target.value })}
+                          placeholder="Your GREEN-API token"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="instanceName" className="block text-sm font-medium text-gray-700">Instance Name (optional)</label>
+                        <input
+                          type="text"
+                          id="instanceName"
+                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          value={form.instanceName}
+                          onChange={(e) => setForm({ ...form, instanceName: e.target.value })}
+                          placeholder="e.g., Sales Team WhatsApp"
+                          required
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition duration-150 ease-in-out"
+                      >
+                        Add Instance
+                      </button>
+                    </form>
                   </div>
 
                   {/* Modal de QR Code */}
@@ -742,6 +806,5 @@ export class CustomPageController {
     `;
   }
 }
-
 
 

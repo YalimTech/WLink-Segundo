@@ -1,10 +1,12 @@
+//src/webhooks/guards/dynamic-instance.guard.spec.ts
 import { ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { DynamicInstanceGuard } from './dynamic-instance.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Request } from 'express';
 
+// CAMBIO: Actualizar mockInstance para usar instanceName en lugar de idInstance
 const mockInstance = {
-  idInstance: '123',
+  instanceName: '123', // Renombrado de idInstance a instanceName
   apiTokenInstance: 'secret-token',
 };
 
@@ -13,6 +15,7 @@ describe('DynamicInstanceGuard', () => {
   let prisma: Partial<PrismaService>;
 
   beforeEach(() => {
+    // CAMBIO: getInstance ahora espera 'instanceName'
     prisma = { getInstance: jest.fn().mockResolvedValue(mockInstance) } as any;
     guard = new DynamicInstanceGuard(prisma as PrismaService);
   });
@@ -24,7 +27,8 @@ describe('DynamicInstanceGuard', () => {
   } as any);
 
   it('allows access with correct token', async () => {
-    const ctx = createContext({ instance: '123' }, 'Bearer secret-token');
+    // 'instance' en el body corresponde al payload.instance del webhook, que es el instanceName
+    const ctx = createContext({ instance: '123' }, 'Bearer secret-token'); 
     await expect(guard.canActivate(ctx)).resolves.toBe(true);
   });
 
@@ -35,12 +39,14 @@ describe('DynamicInstanceGuard', () => {
 
   it('throws if instance not found', async () => {
     (prisma.getInstance as jest.Mock).mockResolvedValue(null);
-    const ctx = createContext({ instance: '999' }, 'Bearer secret-token');
+    // 'instance' en el body corresponde al instanceName
+    const ctx = createContext({ instance: '999' }, 'Bearer secret-token'); 
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
 
   it('throws if token does not match', async () => {
-    const ctx = createContext({ instance: '123' }, 'Bearer wrong');
+    // 'instance' en el body corresponde al instanceName
+    const ctx = createContext({ instance: '123' }, 'Bearer wrong'); 
     await expect(guard.canActivate(ctx)).rejects.toThrow(UnauthorizedException);
   });
 });

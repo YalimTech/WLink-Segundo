@@ -75,15 +75,16 @@ export class CustomPageController {
         throw new UnauthorizedException('No active location ID in user context');
       }
 
-      const user = await this.prisma.findUser(locationId);
-      console.log('User found in DB:', user ? user.id : 'None');
+      // CAMBIO: findUser ahora espera locationId y el User model ahora tiene locationId
+      const user = await this.prisma.findUser(locationId); 
+      console.log('User found in DB:', user ? user.locationId : 'None'); // CAMBIO: user.id a user.locationId
 
       return res.json({
         success: true,
         locationId,
         userData, // Pass the full userData object
         user: user
-          ? { id: user.id, hasTokens: !!(user.accessToken && user.refreshToken) }
+          ? { locationId: user.locationId, hasTokens: !!(user.accessToken && user.refreshToken) } // CAMBIO: id a locationId
           : null,
       });
     } catch (error) {
@@ -182,8 +183,8 @@ export class CustomPageController {
               const [locationId, setLocationId] = useState(null);
               const [encrypted, setEncrypted] = useState(null);
               const [instances, setInstances] = useState([]);
-              // Updated form state variables to match CreateInstanceDto
-              const [form, setForm] = useState({ evolutionApiInstanceId: '', apiToken: '', customName: '' }); 
+              // CAMBIO: Actualizado form state para usar instanceName y token
+              const [form, setForm] = useState({ instanceName: '', token: '', customName: '' }); 
               const [qr, setQr] = useState('');
               const [showQr, setShowQr] = useState(false);
               const [qrLoading, setQrLoading] = useState(false); // Estado para el loading del QR
@@ -323,7 +324,8 @@ export class CustomPageController {
                   console.log('Main polling: Instances loaded:', data.instances);
                   // NUEVO LOG: Mostrar el estado de cada instancia individualmente
                   data.instances.forEach(inst => {
-                      console.log('  Instance ' + inst.idInstance + ' (ID: ' + inst.id + ') state: ' + inst.state + ' Custom Name: ' + inst.customName);
+                      // CAMBIO: idInstance a instanceName
+                      console.log('  Instance ' + inst.instanceName + ' (ID: ' + inst.id + ') state: ' + inst.state + ' Custom Name: ' + inst.customName);
                   });
 
                   // Lógica para cerrar el modal QR desde el polling principal
@@ -362,11 +364,11 @@ export class CustomPageController {
               async function createInstance(e) {
                 e.preventDefault();
                 try {
-                  // Payload now matches CreateInstanceDto: evolutionApiInstanceId, apiToken, customName
+                  // CAMBIO: Payload ahora usa 'instanceName' y 'token' directamente del formulario
                   const payload = { 
                     locationId, 
-                    evolutionApiInstanceId: form.evolutionApiInstanceId, 
-                    apiToken: form.apiToken, 
+                    instanceName: form.instanceName, 
+                    token: form.token, 
                     customName: form.customName 
                   };
                   await makeApiRequest('/api/instances', {
@@ -374,8 +376,8 @@ export class CustomPageController {
                     body: JSON.stringify(payload),
                   });
                   showModal('Instancia creada exitosamente!', 'success');
-                  // Clear form using new field names
-                  setForm({ evolutionApiInstanceId: '', apiToken: '', customName: '' }); 
+                  // CAMBIO: Limpiar formulario usando los nuevos nombres de campo
+                  setForm({ instanceName: '', token: '', customName: '' }); 
                   loadInstances(); // Recargar instancias después de crear una nueva
                 } catch (err) {
                   console.error('Error creating instance:', err);
@@ -564,9 +566,9 @@ export class CustomPageController {
               }
 
               // Función para iniciar la edición del nombre personalizado de una instancia
-              const startEditingName = (instanceId, currentCustomName) => { // CAMBIO: 'currentName' a 'currentCustomName'
+              const startEditingName = (instanceId, currentCustomName) => { 
                 setEditingInstanceId(instanceId);
-                setEditingCustomName(currentCustomName); // CAMBIO: 'setEditingInstanceName' a 'setEditingCustomName'
+                setEditingCustomName(currentCustomName); 
               };
 
               // Función para guardar el nombre personalizado editado de una instancia
@@ -574,7 +576,7 @@ export class CustomPageController {
                 try {
                   await makeApiRequest('/api/instances/' + instanceId, {
                     method: 'PATCH',
-                    body: JSON.stringify({ customName: editingCustomName }), // CORRECTO: 'customName'
+                    body: JSON.stringify({ customName: editingCustomName }), 
                   });
                   showModal('Nombre de instancia actualizado exitosamente!', 'success');
                   setEditingInstanceId(null); // Salir del modo de edición
@@ -645,15 +647,16 @@ export class CustomPageController {
                       {instances.map((inst) => (
                         <div key={inst.id} className="flex flex-col sm:flex-row justify-between items-center p-4 border border-gray-200 rounded-xl bg-white shadow-sm">
                           <div className="text-center sm:text-left mb-3 sm:mb-0">
-                            {/* Mostrar idInstance como el ID único */}
-                            <p className="text-sm text-gray-500">Instance ID: {inst.idInstance || inst.guid || 'N/A'}</p>
+                            {/* CAMBIO: Mostrar instanceName como el ID único; instanceId como el GUID */}
+                            <p className="text-sm text-gray-500">Instance Name: {inst.instanceName || 'N/A'}</p>
+                            {inst.instanceId && <p className="text-sm text-gray-500">Instance ID (GUID): {inst.instanceId}</p>}
                             {/* Campo de nombre personalizado editable */}
                             {editingInstanceId === inst.id ? (
                               <div className="flex flex-col items-center sm:items-start">
                                 <input
                                   type="text"
-                                  value={editingCustomName} // CORRECTO: Usar editingCustomName
-                                  onChange={(e) => setEditingCustomName(e.target.value)} // CORRECTO: setEditingCustomName
+                                  value={editingCustomName} 
+                                  onChange={(e) => setEditingCustomName(e.target.value)} 
                                   className="font-semibold text-lg text-gray-800 border-b border-gray-300 focus:outline-none focus:border-indigo-500 mb-1"
                                 />
                                 <div className="flex gap-2 mt-2">
@@ -674,9 +677,9 @@ export class CustomPageController {
                             ) : (
                               <div className="flex flex-col items-center sm:items-start">
                                 <p className="font-semibold text-lg text-gray-800">
-                                  {inst.customName || 'Unnamed Instance'} {/* CORRECTO: Mostrar customName */}
+                                  {inst.customName || 'Unnamed Instance'} 
                                   <button
-                                    onClick={() => startEditingName(inst.id, inst.customName || '')} // CORRECTO: Pasar customName
+                                    onClick={() => startEditingName(inst.id, inst.customName || '')} 
                                     className="ml-2 text-blue-500 hover:text-blue-700 text-sm"
                                     title="Edit Instance Name"
                                   >
@@ -685,23 +688,22 @@ export class CustomPageController {
                                 </p>
                               </div>
                             )}
-                            <p className="text-sm text-gray-500">Created: {new Date(inst.createdAt).toLocaleDateString()}</p> {/* Usar inst.createdAt */}
+                            <p className="text-sm text-gray-500">Created: {new Date(inst.createdAt).toLocaleDateString()}</p>
                             <span
                               className={
                                 "mt-2 inline-block text-xs px-3 py-1 rounded-full font-medium " +
                                 (inst.state === 'authorized'
-                                  ? 'bg-green-100 text-green-800' // Conectado y autorizado
+                                  ? 'bg-green-100 text-green-800' 
                                   : inst.state === 'qr_code' || inst.state === 'starting'
-                                  ? 'bg-yellow-100 text-yellow-800' // Esperando acción (QR) o iniciando
+                                  ? 'bg-yellow-100 text-yellow-800' 
                                   : inst.state === 'notAuthorized'
-                                  ? 'bg-red-100 text-red-800' // Desconectado (rojo para mayor visibilidad)
+                                  ? 'bg-red-100 text-red-800' 
                                   : inst.state === 'yellowCard' || inst.state === 'blocked'
-                                  ? 'bg-red-500 text-white' // Estados de error o bloqueado (más oscuro)
-                                  : 'bg-gray-200 text-gray-800') // Para cualquier otro estado no mapeado
+                                  ? 'bg-red-500 text-white' 
+                                  : 'bg-gray-200 text-gray-800') 
                               }
                             >
                               {
-                                // Muestra "Awaiting Scan" si el modal de QR está abierto para esta instancia
                                 showQr && String(qrInstanceIdRef.current) === String(inst.id)
                                   ? 'Awaiting Scan'
                                   : inst.state === 'authorized'
@@ -709,12 +711,12 @@ export class CustomPageController {
                                   : inst.state === 'notAuthorized'
                                   ? 'Disconnected'
                                   : inst.state === 'qr_code'
-                                  ? 'Awaiting Scan (Background)' // Si el backend reporta QR pero el modal no está abierto activamente para él
+                                  ? 'Awaiting Scan (Background)' 
                                   : inst.state === 'starting'
                                   ? 'Connecting...'
                                   : inst.state === 'yellowCard' || inst.state === 'blocked'
                                   ? 'Error / Blocked'
-                                  : inst.state || 'Unknown' // Mostrar el estado tal cual si no hay mapeo específico
+                                  : inst.state || 'Unknown' 
                               }
                             </span>
                           </div>
@@ -725,7 +727,7 @@ export class CustomPageController {
                             >
                               Open Console
                             </button>
-                            {inst.state === 'authorized' ? ( // Solo 'authorized' debe poder desconectarse (hacer logout)
+                            {inst.state === 'authorized' ? ( 
                               <button
                                 onClick={() => logoutInstance(inst.id)}
                                 className="w-full sm:w-auto px-4 py-2 rounded-lg bg-yellow-500 text-white font-semibold shadow-md hover:bg-yellow-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500 transition duration-150 ease-in-out"
@@ -759,25 +761,25 @@ export class CustomPageController {
                     </h2>
                     <form onSubmit={createInstance} className="space-y-4">
                       <div>
-                        <label htmlFor="evolutionApiInstanceId" className="block text-sm font-medium text-gray-700">Instance ID</label>
+                        <label htmlFor="instanceName" className="block text-sm font-medium text-gray-700">Instance ID</label>
                         <input
                           type="text"
-                          id="evolutionApiInstanceId" // Updated ID
+                          id="instanceName" // CAMBIO: ID del input a instanceName
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.evolutionApiInstanceId} // Updated value binding
-                          onChange={(e) => setForm({ ...form, evolutionApiInstanceId: e.target.value })} // Updated onChange
+                          value={form.instanceName} // CAMBIO: Value a form.instanceName
+                          onChange={(e) => setForm({ ...form, instanceName: e.target.value })} // CAMBIO: onChange a instanceName
                           placeholder="e.g., 1234567890"
                           required
                         />
                       </div>
                       <div>
-                        <label htmlFor="apiToken" className="block text-sm font-medium text-gray-700">API Token</label>
+                        <label htmlFor="token" className="block text-sm font-medium text-gray-700">API Token</label>
                         <input
                           type="text"
-                          id="apiToken" // Updated ID
+                          id="token" // CAMBIO: ID del input a token
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.apiToken} // Updated value binding
-                          onChange={(e) => setForm({ ...form, apiToken: e.target.value })} // Updated onChange
+                          value={form.token} // CAMBIO: Value a form.token
+                          onChange={(e) => setForm({ ...form, token: e.target.value })} // CAMBIO: onChange a token
                           placeholder="Your GREEN-API token"
                           required
                         />
@@ -790,7 +792,6 @@ export class CustomPageController {
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                           value={form.customName}
                           onChange={(e) => setForm({ ...form, customName: e.target.value })}
-                          placeholder="e.g., Sales Team WhatsApp"
                           // Removed 'required' as per the label "optional"
                         />
                       </div>
@@ -857,7 +858,7 @@ export class CustomPageController {
                             </button>
                           )}
                           <button
-                            onClick={modal.onConfirm || closeModal} // Si es confirm, usa onConfirm, sino closeModal
+                            onClick={modal.onConfirm || closeModal} 
                             className={"px-6 py-2 rounded-lg text-white font-semibold shadow-md transition duration-150 ease-in-out " + (
                               modal.type === 'error' ? 'bg-red-600 hover:bg-red-700' : 'bg-indigo-600 hover:bg-indigo-700'
                             )}

@@ -105,6 +105,7 @@ export class CustomPageController {
    * - Indicador de carga para el QR.
    * - Refinamiento en el manejo de estados y polling.
    * - CORRECCIÓN: Uso de concatenación de strings para evitar conflictos con el compilador de TypeScript.
+   * - CORRECCIÓN: Mejoras en la lógica de renderizado del QR y depuración.
    */
   private generateCustomPageHTML(): string {
     return `
@@ -114,11 +115,16 @@ export class CustomPageController {
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>WLink Bridge - Manager</title>
+          <!-- Tailwind CSS CDN para estilos rápidos y responsivos -->
           <script src="https://cdn.tailwindcss.com"></script>
+          <!-- Fuentes de Google Fonts (Inter) -->
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+          <!-- React y ReactDOM CDN -->
           <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
           <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+          <!-- Babel para transpilar JSX en el navegador -->
           <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+          <!-- QRCode.js para generar códigos QR -->
           <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
           <style>
             body {
@@ -224,6 +230,7 @@ export class CustomPageController {
 
               // Efecto para renderizar el QR cuando 'showQr' y 'qr' cambian
               useEffect(() => {
+                console.log('QR useEffect triggered. showQr:', showQr, 'qr data present:', !!qr, 'qrCodeDivRef.current:', qrCodeDivRef.current);
                 if (showQr && qr && qrCodeDivRef.current) {
                   qrCodeDivRef.current.innerHTML = ''; // Limpiar cualquier QR anterior
                   // QRCode.js puede tomar una URL de imagen base64 directamente
@@ -232,19 +239,31 @@ export class CustomPageController {
                     img.src = qr;
                     img.className = "mx-auto max-w-full h-auto"; // Estilos para la imagen QR
                     qrCodeDivRef.current.appendChild(img);
+                    console.log('QR rendered as image.');
                   } else {
                     // Si es un string de texto (código de emparejamiento), generarlo como QR
-                    new QRCode(qrCodeDivRef.current, {
-                      text: qr,
-                      width: 256,
-                      height: 256,
-                      colorDark : "#000000",
-                      colorLight : "#ffffff",
-                      correctLevel : QRCode.CorrectLevel.H
-                    });
+                    try {
+                      new QRCode(qrCodeDivRef.current, {
+                        text: qr,
+                        width: 256,
+                        height: 256,
+                        colorDark : "#000000",
+                        colorLight : "#ffffff",
+                        correctLevel : QRCode.CorrectLevel.H
+                      });
+                      console.log('QR rendered from text data.');
+                    } catch (e) {
+                      console.error('Error rendering QR from text:', e);
+                      qrCodeDivRef.current.innerHTML = '<p class="text-red-500">Error al generar QR.</p>';
+                    }
                   }
+                } else if (showQr && !qrLoading && !qr) {
+                    console.log('QR useEffect: showQr is true, but qr data is missing and not loading.');
+                    if (qrCodeDivRef.current) {
+                        qrCodeDivRef.current.innerHTML = '<p class="text-red-500">No se pudo cargar el código QR. Intente de nuevo.</p>';
+                    }
                 }
-              }, [showQr, qr]);
+              }, [showQr, qr, qrLoading]); // Añadido qrLoading a las dependencias
 
               // Función genérica para hacer solicitudes a la API con manejo de errores y headers
               async function makeApiRequest(path, options = {}) {
@@ -663,7 +682,7 @@ export class CustomPageController {
                             <div ref={qrCodeDivRef} className="w-full h-full flex items-center justify-center"></div>
                           </div>
                         ) : (
-                          <p className="text-red-500 text-lg">Failed to load QR code. Please try again.</p>
+                          <p className="text-red-500 text-lg">No se pudo cargar el código QR. Intente de nuevo.</p>
                         )}
                         <button
                           onClick={() => {
@@ -717,5 +736,6 @@ export class CustomPageController {
     `;
   }
 }
+
 
 

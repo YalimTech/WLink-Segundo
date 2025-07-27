@@ -8,11 +8,12 @@ generator json {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url       = env("DATABASE_URL")
 }
 
 model User {
-  id           String    @id @unique @map("locationId") // GoHighLevel Location ID
+  // CAMBIO: Renombrado de 'id' a 'locationId' para concordancia con GHL
+  locationId   String    @id @unique @map("locationId") // GoHighLevel Location ID
   companyId    String?
   firstName    String?   // Campo para el nombre del usuario de GHL
   lastName     String?   // Campo para el apellido del usuario de GHL
@@ -37,29 +38,31 @@ enum InstanceState {
 }
 
 model Instance {
-  id                BigInt       @id @default(autoincrement())
+  id                 BigInt       @id @default(autoincrement())
 
-  /// Nombre de la Instancia (identificador único de Evolution API) - No modificable
-  idInstance        String       @unique @db.Text
+  /// Nombre de la Instancia (identificador único de Evolution API, antes 'idInstance') - No modificable
+  instanceName       String       @unique @db.Text
 
-  /// GUID único generado por Evolution API
-  instanceGuid      String?      @unique @db.Text
+  /// GUID único generado por Evolution API (antes 'instanceGuid'), también conocido como 'instanceId' en Evolution API
+  instanceId         String?      @unique @db.Text
 
   /// Nombre o descripción editable por el cliente desde su panel (ej. 'Numero de Servicio al Cliente 1', 'Flota Personal', etc.)
-  customName        String?      @map("name") // CAMBIO: Renombrado de 'name' a 'customName' y mapeado a la columna 'name' existente
+  customName         String?      @map("name") // Renombrado de 'name' a 'customName' en la interfaz, mapeado a la columna 'name'
 
-  apiTokenInstance  String       @db.Text
+  apiTokenInstance   String       @db.Text
 
   /// Estado de conexión (mapeado de "stateInstance")
-  state             InstanceState? @map("stateInstance")
+  state              InstanceState? @map("stateInstance")
 
-  userId            String
-  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // CAMBIO: Renombrado de 'userLocationId' a 'locationId' para total concordancia
+  locationId         String
+  user               User         @relation(fields: [locationId], references: [locationId], onDelete: Cascade) // CAMBIO: Referencia a locationId
 
-  settings          Json?        @default("{}") @db.Json
-  createdAt         DateTime     @default(now())
-  updatedAt         DateTime     @updatedAt // Es buena práctica tener un campo de actualización
+  settings           Json?        @default("{}") @db.Json
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt // Es buena práctica tener un campo de actualización
 
-  @@index([userId])
+  // CAMBIO: Índice sobre locationId
+  @@index([locationId])
+  @@map("instances") // Asegúrate de que la tabla se mapee correctamente si usas un nombre diferente por defecto
 }
-

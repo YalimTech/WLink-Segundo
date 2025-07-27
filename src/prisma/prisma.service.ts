@@ -57,39 +57,47 @@ export class PrismaService
   // --- MÉTODOS DE USUARIO ---
   async createUser(data: UserCreateData): Promise<User> {
     if (this.client) {
+      // Usar 'locationId' para el upsert
       return this.client.user.upsert({
-        where: { id: data.id as string },
+        where: { locationId: data.locationId as string }, // CAMBIO: Usar locationId
         update: data,
         create: data,
       });
     }
-    this.memory!.users.set(data.id as string, { ...(data as any) });
+    this.memory!.users.set(data.locationId as string, { ...(data as any) }); // CAMBIO: Usar locationId como clave en memoria
     return data as any;
   }
 
-  async findUser(id: string): Promise<User | null> {
-    if (this.client) return this.client.user.findUnique({ where: { id } });
-    return this.memory!.users.get(id) || null;
+  async findUser(locationId: string): Promise<User | null> { // CAMBIO: Parámetro 'id' a 'locationId'
+    if (this.client) return this.client.user.findUnique({ where: { locationId } }); // CAMBIO: Usar locationId
+    return this.memory!.users.get(locationId) || null; // CAMBIO: Usar locationId
   }
 
-  async updateUser(id: string, data: UserUpdateData): Promise<User> {
+  async updateUser(locationId: string, data: UserUpdateData): Promise<User> { // CAMBIO: Parámetro 'id' a 'locationId'
     if (this.client)
-      return this.client.user.update({ where: { id }, data });
-    const user = { ...(this.memory!.users.get(id) || {}), ...(data as any) };
-    this.memory!.users.set(id, user);
+      return this.client.user.update({ where: { locationId }, data }); // CAMBIO: Usar locationId
+    const user = { ...(this.memory!.users.get(locationId) || {}), ...(data as any) }; // CAMBIO: Usar locationId
+    this.memory!.users.set(locationId, user); // CAMBIO: Usar locationId
     return user as any;
   }
 
   // --- MÉTODOS DE INSTANCIA ---
   async createInstance(data: any): Promise<Instance & { user: User }> {
     if (this.client)
-      // `data` debe contener idInstance, instanceGuid, apiTokenInstance, userId, customName, state, settings
+      // Asegurar que los datos enviados a Prisma coincidan con el schema
+      // `data` debe contener instanceName, instanceId, apiTokenInstance, locationId, customName, state, settings
       return this.client.instance.create({ data, include: { user: true } });
     
     // Fallback en memoria: Asegúrate de que los campos estén correctamente asignados
-    const instanceData = { ...data, idInstance: parseId(data.idInstance) }; // Asegura que idInstance sea string para la clave
-    this.memory!.instances.set(instanceData.idInstance, instanceData);
-    const user = this.memory!.users.get(data.userId);
+    // CAMBIO: idInstance a instanceName; instanceGuid a instanceId; userId a locationId
+    const instanceData = { 
+        ...data, 
+        instanceName: parseId(data.instanceName), // El campo clave es instanceName
+        instanceId: data.instanceId, // Asegurar que instanceId también se pasa si existe
+        locationId: data.locationId // Asegurar que locationId también se pasa
+    }; 
+    this.memory!.instances.set(instanceData.instanceName, instanceData); // CAMBIO: Usar instanceName como clave en memoria
+    const user = this.memory!.users.get(data.locationId); // CAMBIO: Usar locationId para buscar el usuario
     return { ...instanceData, user } as any;
   }
 
@@ -101,44 +109,38 @@ export class PrismaService
       });
     }
     for (const inst of this.memory!.instances.values()) {
-      // Comparar directamente BigInt con BigInt si es posible, o convertir para comparación
       if (inst.id === id) { 
-        const user = this.memory!.users.get(inst.userId);
+        const user = this.memory!.users.get(inst.locationId); // CAMBIO: Usar locationId
         return { ...inst, user } as any;
       }
     }
     return null;
   }
 
-  async getInstance(idInstance: string): Promise<(Instance & { user: User }) | null> {
+  async getInstance(instanceName: string): Promise<(Instance & { user: User }) | null> { // CAMBIO: Parámetro 'idInstance' a 'instanceName'
     if (this.client)
       return this.client.instance.findUnique({
-        where: { idInstance: parseId(idInstance) },
+        where: { instanceName: parseId(instanceName) }, // CAMBIO: Usar instanceName
         include: { user: true },
       });
-    const inst = this.memory!.instances.get(parseId(idInstance));
+    const inst = this.memory!.instances.get(parseId(instanceName)); // CAMBIO: Usar instanceName
     if (!inst) return null;
-    const user = this.memory!.users.get(inst.userId);
+    const user = this.memory!.users.get(inst.locationId); // CAMBIO: Usar locationId
     return { ...inst, user } as any;
   }
 
-  async getInstancesByUserId(userId: string): Promise<(Instance & { user: User })[]> {
+  async getInstancesByLocationId(locationId: string): Promise<(Instance & { user: User })[]> { // CAMBIO: Parámetro 'userId' a 'locationId' y nombre del método
     if (this.client)
-      return this.client.instance.findMany({ where: { userId }, include: { user: true } });
+      return this.client.instance.findMany({ where: { locationId }, include: { user: true } }); // CAMBIO: Usar locationId
     const list: any[] = [];
     for (const inst of this.memory!.instances.values()) {
-      if (inst.userId === userId) {
-        list.push({ ...inst, user: this.memory!.users.get(userId) });
+      if (inst.locationId === locationId) { // CAMBIO: Usar locationId
+        list.push({ ...inst, user: this.memory!.users.get(locationId) }); // CAMBIO: Usar locationId
       }
     }
     return list as any;
   }
 
-  /**
-   * ✅ --- CORRECCIÓN APLICADA AQUÍ ---
-   * Se añade el nuevo método para borrar la instancia usando su ID numérico (BigInt).
-   * Esto es necesario para que el método deleteInstance del controlador funcione.
-   */
   async removeInstanceById(id: bigint): Promise<Instance & { user: User }> {
     if (this.client) {
       return this.client.instance.delete({
@@ -148,21 +150,20 @@ export class PrismaService
     }
     const inst = await this.getInstanceById(id);
     if (!inst) throw new Error(`Instance with ID ${id} not found.`);
-    // En el caso de memoria, eliminamos por el idInstance (que es la clave en el Map)
-    this.memory!.instances.delete(parseId(inst.idInstance));
+    // En el caso de memoria, eliminamos por el instanceName (que es la clave en el Map)
+    this.memory!.instances.delete(parseId(inst.instanceName)); // CAMBIO: Usar instanceName
     return inst;
   }
-  // --- FIN DE LA CORRECCIÓN ---
 
-  async removeInstance(idInstance: string): Promise<Instance & { user: User }> {
+  async removeInstance(instanceName: string): Promise<Instance & { user: User }> { // CAMBIO: Parámetro 'idInstance' a 'instanceName'
     if (this.client)
       return this.client.instance.delete({
-        where: { idInstance: parseId(idInstance) },
+        where: { instanceName: parseId(instanceName) }, // CAMBIO: Usar instanceName
         include: { user: true },
       });
-    const inst = await this.getInstance(idInstance);
-    if (!inst) throw new Error(`Instance ${idInstance} not found.`);
-    this.memory!.instances.delete(parseId(idInstance));
+    const inst = await this.getInstance(instanceName); // CAMBIO: Usar instanceName
+    if (!inst) throw new Error(`Instance ${instanceName} not found.`); // CAMBIO: Usar instanceName
+    this.memory!.instances.delete(parseId(instanceName)); // CAMBIO: Usar instanceName
     return inst;
   }
 
@@ -171,35 +172,31 @@ export class PrismaService
    * Actualiza el nombre personalizado (customName) de una instancia.
    * El `name` en el esquema de Prisma se mapea a `customName` en la interfaz.
    */
-  async updateInstanceCustomName(idInstance: string, customName: string): Promise<Instance & { user: User }> {
+  async updateInstanceCustomName(instanceName: string, customName: string): Promise<Instance & { user: User }> { // CAMBIO: Parámetro 'idInstance' a 'instanceName'
     if (this.client)
       return this.client.instance.update({
-        where: { idInstance: parseId(idInstance) },
+        where: { instanceName: parseId(instanceName) }, // CAMBIO: Usar instanceName
         data: { name: customName }, // 'name' es la columna en DB para 'customName'
         include: { user: true },
       });
-    const inst = await this.getInstance(idInstance);
-    if (!inst) throw new Error(`Instance ${idInstance} not found.`);
-    (inst as any).customName = customName; // Actualizar el campo 'customName' en memoria
-    // Si en memoria la propiedad es 'name', se debería actualizar 'name': (inst as any).name = customName;
-    // Esto depende de cómo se almacenan las propiedades en el objeto `inst` en el Map `memory.instances`.
-    // Si `customName` se guarda como `customName` en el objeto, esta línea es correcta.
-    // Si se guarda como `name`, entonces: `(inst as any).name = customName;`
-    this.memory!.instances.set(parseId(idInstance), inst);
+    const inst = await this.getInstance(instanceName); // CAMBIO: Usar instanceName
+    if (!inst) throw new Error(`Instance ${instanceName} not found.`); // CAMBIO: Usar instanceName
+    (inst as any).customName = customName;
+    this.memory!.instances.set(parseId(instanceName), inst); // CAMBIO: Usar instanceName
     return inst;
   }
 
-  async updateInstanceState(idInstance: string, state: InstanceState): Promise<Instance & { user: User }> {
+  async updateInstanceState(instanceName: string, state: InstanceState): Promise<Instance & { user: User }> { // CAMBIO: Parámetro 'idInstance' a 'instanceName'
     if (this.client)
       return this.client.instance.update({
-        where: { idInstance: parseId(idInstance) },
+        where: { instanceName: parseId(instanceName) }, // CAMBIO: Usar instanceName
         data: { state: state },
         include: { user: true },
       });
-    const inst = await this.getInstance(idInstance);
-    if (!inst) throw new Error(`Instance ${idInstance} not found.`);
+    const inst = await this.getInstance(instanceName); // CAMBIO: Usar instanceName
+    if (!inst) throw new Error(`Instance ${instanceName} not found.`); // CAMBIO: Usar instanceName
     (inst as any).state = state;
-    this.memory!.instances.set(parseId(idInstance), inst);
+    this.memory!.instances.set(parseId(instanceName), inst); // CAMBIO: Usar instanceName
     return inst;
   }
   
@@ -218,7 +215,7 @@ export class PrismaService
     }
     let count = 0;
     for (const [key, inst] of this.memory!.instances.entries()) {
-      if (inst.customName === customName) { // Usar customName para la comparación en memoria
+      if (inst.customName === customName) { 
         inst.state = state;
         this.memory!.instances.set(key, inst);
         count++;
@@ -228,94 +225,90 @@ export class PrismaService
     return { count };
   }
 
-  async updateInstanceSettings(idInstance: string, settings: Settings): Promise<Instance & { user: User }> {
+  async updateInstanceSettings(instanceName: string, settings: Settings): Promise<Instance & { user: User }> { // CAMBIO: Parámetro 'idInstance' a 'instanceName'
     if (this.client)
       return this.client.instance.update({
-        where: { idInstance: parseId(idInstance) },
+        where: { instanceName: parseId(instanceName) }, // CAMBIO: Usar instanceName
         data: { settings: (settings || {}) as any },
         include: { user: true },
       });
-    const inst = await this.getInstance(idInstance);
-    if (!inst) throw new Error(`Instance ${idInstance} not found.`);
+    const inst = await this.getInstance(instanceName); // CAMBIO: Usar instanceName
+    if (!inst) throw new Error(`Instance ${instanceName} not found.`); // CAMBIO: Usar instanceName
     (inst as any).settings = settings || {};
-    this.memory!.instances.set(parseId(idInstance), inst);
+    this.memory!.instances.set(parseId(instanceName), inst); // CAMBIO: Usar instanceName
     return inst;
   }
 
-  async findInstanceByGuid(guid: string): Promise<(Instance & { user: User }) | null> {
+  async findInstanceById(instanceId: string): Promise<(Instance & { user: User }) | null> { // CAMBIO: Renombrado de 'findInstanceByGuid' a 'findInstanceById', parámetro 'guid' a 'instanceId'
     if (this.client)
       return this.client.instance.findUnique({
-        where: { instanceGuid: guid },
+        where: { instanceId: instanceId }, // CAMBIO: Usar instanceId
         include: { user: true },
       });
-    // En el fallback en memoria, si `getInstance` busca por `idInstance`, y el GUID
-    // no es siempre igual al `idInstance`, esto puede ser incorrecto.
-    // Debería buscar específicamente por `instanceGuid`.
     for (const inst of this.memory!.instances.values()) {
-        if (inst.instanceGuid === guid) {
-            return { ...inst, user: this.memory!.users.get(inst.userId) } as any;
+        if (inst.instanceId === instanceId) { // CAMBIO: Usar instanceId
+            return { ...inst, user: this.memory!.users.get(inst.locationId) } as any; // CAMBIO: Usar locationId
         }
     }
     return null;
   }
 
   /**
-   * ✅ MÉTODO CORREGIDO: Antes `getInstanceByNameAndToken`.
-   * Busca una instancia por su `idInstance` (el ID único de Evolution API) y `apiTokenInstance`.
+   * ✅ MÉTODO CORREGIDO: Antes `getInstanceByIdInstanceAndToken`.
+   * Busca una instancia por su `instanceName` (el ID único de Evolution API) y `apiTokenInstance`.
    */
-  async getInstanceByIdInstanceAndToken(evolutionApiInstanceId: string, apiTokenInstance: string): Promise<(Instance & { user: User }) | null> {
+  async getInstanceByNameAndToken(instanceName: string, apiTokenInstance: string): Promise<(Instance & { user: User }) | null> { // CAMBIO: Parámetro 'evolutionApiInstanceId' a 'instanceName', y nombre del método
     if (this.client)
       return this.client.instance.findFirst({
-        where: { idInstance: parseId(evolutionApiInstanceId), apiTokenInstance: apiTokenInstance }, // Buscar por idInstance
+        where: { instanceName: parseId(instanceName), apiTokenInstance: apiTokenInstance }, // CAMBIO: Usar instanceName
         include: { user: true },
       });
     for (const inst of this.memory!.instances.values()) {
-      if (inst.idInstance === evolutionApiInstanceId && inst.apiTokenInstance === apiTokenInstance) {
-        return { ...inst, user: this.memory!.users.get(inst.userId) } as any;
+      if (inst.instanceName === instanceName && inst.apiTokenInstance === apiTokenInstance) { // CAMBIO: Usar instanceName
+        return { ...inst, user: this.memory!.users.get(inst.locationId) } as any; // CAMBIO: Usar locationId
       }
     }
     return null;
   }
 
   /**
-   * ✅ MÉTODO RENOMBRADO: Antes `findInstanceByNameOnly`.
-   * Busca una instancia por su `idInstance` (el ID único de Evolution API).
+   * ✅ MÉTODO RENOMBRADO: Antes `findInstanceByIdInstanceOnly`.
+   * Busca una instancia por su `instanceName` (el ID único de Evolution API).
    */
-  async findInstanceByIdInstanceOnly(evolutionApiInstanceId: string): Promise<(Instance & { user: User }) | null> {
+  async findInstanceByNameOnly(instanceName: string): Promise<(Instance & { user: User }) | null> { // CAMBIO: Parámetro 'evolutionApiInstanceId' a 'instanceName', y nombre del método
     if (this.client)
       return this.client.instance.findFirst({
-        where: { idInstance: parseId(evolutionApiInstanceId) }, // Buscar por idInstance
+        where: { instanceName: parseId(instanceName) }, // CAMBIO: Usar instanceName
         include: { user: true },
       });
     for (const inst of this.memory!.instances.values()) {
-      if (inst.idInstance === evolutionApiInstanceId) {
-        return { ...inst, user: this.memory!.users.get(inst.userId) } as any;
+      if (inst.instanceName === instanceName) { // CAMBIO: Usar instanceName
+        return { ...inst, user: this.memory!.users.get(inst.locationId) } as any; // CAMBIO: Usar locationId
       }
     }
     return null;
   }
 
   // --- OTROS MÉTODOS ---
-  async getUserWithTokens(userId: string): Promise<User | null> {
-    if (this.client) return this.client.user.findUnique({ where: { id: userId } });
-    return this.memory!.users.get(userId) || null;
+  async getUserWithTokens(locationId: string): Promise<User | null> { // CAMBIO: Parámetro 'userId' a 'locationId'
+    if (this.client) return this.client.user.findUnique({ where: { locationId } }); // CAMBIO: Usar locationId
+    return this.memory!.users.get(locationId) || null; // CAMBIO: Usar locationId
   }
 
   async updateUserTokens(
-    userId: string,
+    locationId: string, // CAMBIO: Parámetro 'userId' a 'locationId'
     accessToken: string,
     refreshToken: string,
     tokenExpiresAt: Date,
   ): Promise<User> {
     if (this.client)
       return this.client.user.update({
-        where: { id: userId },
+        where: { locationId }, // CAMBIO: Usar locationId
         data: { accessToken, refreshToken, tokenExpiresAt },
       });
-    const user = (this.memory!.users.get(userId) || {}) as any;
+    const user = (this.memory!.users.get(locationId) || {}) as any; // CAMBIO: Usar locationId
     Object.assign(user, { accessToken, refreshToken, tokenExpiresAt });
-    this.memory!.users.set(userId, user);
+    this.memory!.users.set(locationId, user); // CAMBIO: Usar locationId
     return user as any;
   }
 }
-

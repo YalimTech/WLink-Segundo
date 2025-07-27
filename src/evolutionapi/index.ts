@@ -1,5 +1,4 @@
 // src/evolutionapi/index.ts
-
 import { User, Instance, InstanceState, UserCreateData, UserUpdateData } from '../types';
 import { ExecutionContext, Logger, CanActivate } from '@nestjs/common';
 import { Request } from 'express';
@@ -12,18 +11,34 @@ export interface Settings {
 // Define el "contrato" que cualquier servicio de base de datos debe cumplir.
 export interface StorageProvider<U, V, C, D> {
   // Métodos de Usuario
+  // CAMBIO: Parámetro 'identifier' a 'locationId' para concordancia con GHL
   createUser(data: C): Promise<U>;
-  findUser(identifier: string): Promise<U | null>;
-  updateUser(identifier: string, data: D): Promise<U>;
+  findUser(locationId: string): Promise<U | null>;
+  updateUser(locationId: string, data: D): Promise<U>;
 
   // Métodos de Instancia
   createInstance(data: any): Promise<V>;
-  getInstance(idInstance: string): Promise<V | null>;
-  getInstancesByUserId(userId: string): Promise<V[]>;
-  removeInstance(idInstance: string): Promise<V>;
-  updateInstanceName(idInstance: string, name: string): Promise<V>;
-  updateInstanceState(idInstance: string, state: InstanceState): Promise<V>;
-  updateInstanceSettings(idInstance: string, settings: Settings): Promise<V>;
+  // CAMBIO: Renombrado de 'idInstance' a 'instanceName'
+  getInstance(instanceName: string): Promise<V | null>;
+  // CAMBIO: Renombrado de 'getInstancesByUserId' a 'getInstancesByLocationId' y parámetro a 'locationId'
+  getInstancesByLocationId(locationId: string): Promise<V[]>;
+  // CAMBIO: Renombrado de 'removeInstance(idInstance)' a 'removeInstance(instanceName)'
+  removeInstance(instanceName: string): Promise<V>;
+  // CAMBIO: Renombrado de 'updateInstanceName' a 'updateInstanceCustomName' y parámetros
+  updateInstanceCustomName(instanceName: string, customName: string): Promise<V>;
+  // CAMBIO: Renombrado de 'idInstance' a 'instanceName'
+  updateInstanceState(instanceName: string, state: InstanceState): Promise<V>;
+  // CAMBIO: Renombrado de 'idInstance' a 'instanceName'
+  updateInstanceSettings(instanceName: string, settings: Settings): Promise<V>;
+
+  // Métodos adicionales que tu PrismaService puede tener (ej. para tokens GHL)
+  getUserWithTokens?(locationId: string): Promise<U | null>;
+  updateUserTokens?(
+    locationId: string,
+    accessToken: string,
+    refreshToken: string,
+    tokenExpiresAt: Date,
+  ): Promise<U>;
 }
 
 // --- Interfaces de Transformación de Mensajes ---

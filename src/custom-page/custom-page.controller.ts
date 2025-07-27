@@ -576,9 +576,9 @@ export class CustomPageController {
                 <div className="bg-white rounded-2xl shadow-lg p-6 sm:p-8 space-y-6 border border-gray-200 w-full">
                   {/* Encabezado con logo y título */}
                   <div className="flex flex-col items-center justify-center mb-6">
-                    <img src="https://placehold.co/60x60/00FF00/FFFFFF?text=G" alt="Logo" className="h-16 w-16 mb-2" />
+                    <img src="https://googleusercontent.com/file_content/0" alt="WLink Icono" className="h-16 w-16 mb-2" />
                     <h1 className="text-3xl font-bold text-center text-gray-800">WhatsApp Integration</h1>
-                    <p className="text-gray-500 text-center">Manage your instances with ease</p> {/* CAMBIO: Removida mención a "GREEN-API" */}
+                    <p className="text-gray-500 text-center">Manage your instances with ease</p>
                   </div>
 
                   {/* Sección de Connection Status */}
@@ -655,39 +655,39 @@ export class CustomPageController {
                                     <i className="fas fa-pencil-alt"></i>
                                   </button>
                                 </p>
+                                <p className="text-sm text-gray-500">Created: {new Date(inst.createdAt).toLocaleDateString()}</p> 
+                                <span
+                                  className={
+                                    "mt-2 inline-block text-xs px-3 py-1 rounded-full font-medium " +
+                                    (inst.state === 'authorized'
+                                      ? 'bg-green-100 text-green-800' 
+                                      : inst.state === 'qr_code' || inst.state === 'starting'
+                                      ? 'bg-yellow-100 text-yellow-800' 
+                                      : inst.state === 'notAuthorized'
+                                      ? 'bg-red-100 text-red-800' 
+                                      : inst.state === 'yellowCard' || inst.state === 'blocked'
+                                      ? 'bg-red-500 text-white' 
+                                      : 'bg-gray-200 text-gray-800') 
+                                  }
+                                >
+                                  {
+                                    showQr && String(qrInstanceIdRef.current) === String(inst.id)
+                                      ? 'Awaiting Scan'
+                                      : inst.state === 'authorized'
+                                      ? 'Connected'
+                                      : inst.state === 'notAuthorized'
+                                      ? 'Disconnected'
+                                      : inst.state === 'qr_code'
+                                      ? 'Awaiting Scan (Background)' 
+                                      : inst.state === 'starting'
+                                      ? 'Connecting...'
+                                      : inst.state === 'yellowCard' || inst.state === 'blocked'
+                                      ? 'Error / Blocked'
+                                      : inst.state || 'Unknown' 
+                                  }
+                                </span>
                               </div>
                             )}
-                            <p className="text-sm text-gray-500">Created: {new Date(inst.createdAt).toLocaleDateString()}</p> 
-                            <span
-                              className={
-                                "mt-2 inline-block text-xs px-3 py-1 rounded-full font-medium " +
-                                (inst.state === 'authorized'
-                                  ? 'bg-green-100 text-green-800' 
-                                  : inst.state === 'qr_code' || inst.state === 'starting'
-                                  ? 'bg-yellow-100 text-yellow-800' 
-                                  : inst.state === 'notAuthorized'
-                                  ? 'bg-red-100 text-red-800' 
-                                  : inst.state === 'yellowCard' || inst.state === 'blocked'
-                                  ? 'bg-red-500 text-white' 
-                                  : 'bg-gray-200 text-gray-800') 
-                              }
-                            >
-                              {
-                                showQr && String(qrInstanceIdRef.current) === String(inst.id)
-                                  ? 'Awaiting Scan'
-                                  : inst.state === 'authorized'
-                                  ? 'Connected'
-                                  : inst.state === 'notAuthorized'
-                                  ? 'Disconnected'
-                                  : inst.state === 'qr_code'
-                                  ? 'Awaiting Scan (Background)' 
-                                  : inst.state === 'starting'
-                                  ? 'Connecting...'
-                                  : inst.state === 'yellowCard' || inst.state === 'blocked'
-                                  ? 'Error / Blocked'
-                                  : inst.state || 'Unknown' 
-                              }
-                            </span>
                           </div>
                           <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto mt-4 sm:mt-0">
                             <button
@@ -751,7 +751,7 @@ export class CustomPageController {
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
                           value={form.token} 
                           onChange={(e) => setForm({ ...form, token: e.target.value })} 
-                          placeholder="Your token" {/* CAMBIO: Removida mención a "GREEN-API" */}
+                          placeholder="Your token"
                           required {/* CAMBIO: Este campo es obligatorio */}
                         />
                       </div>
@@ -852,3 +852,4 @@ export class CustomPageController {
     `;
   }
 }
+

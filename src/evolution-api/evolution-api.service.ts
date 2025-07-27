@@ -112,6 +112,28 @@ export class EvolutionApiService extends BaseAdapter<
     return response.data;
   }
 
+  /**
+   * ✅ NUEVO MÉTODO: Obtiene los detalles de un usuario de GHL por su ID.
+   * @param locationId El ID de la ubicación (para obtener el token de acceso).
+   * @param ghlUserId El ID del usuario de GHL (obtenido del callback OAuth).
+   * @returns Los detalles del usuario de GHL o null si no se encuentra.
+   */
+  public async getGhlUserDetails(locationId: string, ghlUserId: string): Promise<any | null> {
+    try {
+      const httpClient = await this.getHttpClient(locationId);
+      const response = await httpClient.get(`/users/${ghlUserId}`); // Endpoint para obtener detalles del usuario
+      this.logger.log(`Fetched GHL user details for ${ghlUserId}: ${JSON.stringify(response.data)}`);
+      return response.data?.user || response.data; // La respuesta puede variar, a veces viene en 'user'
+    } catch (error) {
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        this.logger.warn(`GHL User ${ghlUserId} not found for location ${locationId}.`);
+        return null;
+      }
+      this.logger.error(`Error fetching GHL user details for ${ghlUserId}: ${error.message}`, error.stack);
+      throw new IntegrationError(`Failed to fetch GHL user details: ${error.message}`);
+    }
+  }
+
   public async getGhlContactByPhone(
     locationId: string,
     phone: string,
@@ -174,7 +196,7 @@ export class EvolutionApiService extends BaseAdapter<
 
     await this.evolutionService.sendMessage(
       instance.apiTokenInstance,
-      instance.name,
+      instance.idInstance, // Usa idInstance como el "name" de Evolution API
       ghlWebhook.phone,
       ghlWebhook.message,
     );
@@ -190,7 +212,7 @@ export class EvolutionApiService extends BaseAdapter<
    * ✅ MEJORA: Más logs para depurar el estado de la instancia.
    */
   public async handleEvolutionWebhook(webhook: EvolutionWebhook): Promise<void> {
-    const instanceName = webhook.instance;
+    const instanceName = webhook.instance; // Este es el idInstance de Evolution API
     if (!instanceName) {
       this.logger.warn('[EvolutionApiService] Webhook received without an instance name. Ignoring.');
       return;
@@ -225,14 +247,16 @@ export class EvolutionApiService extends BaseAdapter<
       }
       
       this.logger.log(`[EvolutionApiService] Attempting to update instance '${instanceName}' state from webhook. Mapped Status: '${mappedStatus}'`);
-      const updated = await this.prisma.updateInstanceStateByName(instanceName, mappedStatus);
+      // Usa idInstance para actualizar el estado en la DB
+      const updated = await this.prisma.updateInstanceState(instanceName, mappedStatus); // CAMBIO: Usar updateInstanceState por idInstance
       if (updated.count > 0) {
         this.logger.log(`[EvolutionApiService] Instance '${instanceName}' state updated to '${mappedStatus}' via webhook. Rows affected: ${updated.count}`);
       } else {
         this.logger.warn(`[EvolutionApiService] Webhook for instance '${instanceName}' received, but could not find/update it in DB. Check instance name.`);
       }
     } else if (webhook.event === 'messages.upsert' && webhook.data?.key?.remoteJid) {
-      const instance = await this.prisma.findInstanceByNameOnly(instanceName);
+      // Buscar la instancia por su idInstance (que es el 'instance' del webhook)
+      const instance = await this.prisma.getInstance(instanceName); // CAMBIO: Usar getInstance por idInstance
       if (!instance) {
         this.logger.warn(`[EvolutionApiService] Webhook 'messages.upsert' for unknown instance '${instanceName}'. Ignoring message.`);
         return;
@@ -265,15 +289,15 @@ export class EvolutionApiService extends BaseAdapter<
     userId: string,
     instanceId: string, // Esto es el GUID que se guarda en instanceGuid
     token: string,
-    instanceName: string, // Esto es el nombre que se usa como idInstance en Evolution API
+    customName: string, // CAMBIO: 'instanceName' a 'customName'
   ): Promise<Instance> {
-    this.logger.log(`[EvolutionApiService] Attempting to create instance: '${instanceName}' for user: '${userId}'`);
-    const existing = await this.prisma.getInstanceByNameAndToken(
-      instanceName,
+    this.logger.log(`[EvolutionApiService] Attempting to create instance: '${customName}' for user: '${userId}'`); // CAMBIO: 'instanceName' a 'customName'
+    const existing = await this.prisma.getInstanceByNameAndToken( // Este método busca por 'name' y 'token'
+      customName, // CAMBIO: 'instanceName' a 'customName'
       token,
     );
     if (existing) {
-      this.logger.warn(`[EvolutionApiService] Instance '${instanceName}' with this name and token already exists.`);
+      this.logger.warn(`[EvolutionApiService] Instance '${customName}' with this name and token already exists.`); // CAMBIO: 'instanceName' a 'customName'
       throw new HttpException(
         `An instance with this name and token already exists in WLink.`,
         HttpStatus.CONFLICT,
@@ -281,20 +305,20 @@ export class EvolutionApiService extends BaseAdapter<
     }
 
     try {
-      this.logger.log(`[EvolutionApiService] Validating credentials for '${instanceName}'...`);
+      this.logger.log(`[EvolutionApiService] Validating credentials for '${customName}'...`); // CAMBIO: 'instanceName' a 'customName'
       const isValid = await this.evolutionService.validateInstanceCredentials(
         token,
-        instanceName,
+        customName, // CAMBIO: 'instanceName' a 'customName'
       );
       if (!isValid) {
-        this.logger.error(`[EvolutionApiService] Invalid credentials for '${instanceName}'.`);
+        this.logger.error(`[EvolutionApiService] Invalid credentials for '${customName}'.`); // CAMBIO: 'instanceName' a 'customName'
         throw new Error('Invalid credentials');
       }
-      this.logger.log(`[EvolutionApiService] Credentials valid for '${instanceName}'. Fetching initial status...`);
+      this.logger.log(`[EvolutionApiService] Credentials valid for '${customName}'. Fetching initial status...`); // CAMBIO: 'instanceName' a 'customName'
 
       const statusInfo = await this.evolutionService.getInstanceStatus(
         token,
-        instanceName,
+        customName, // CAMBIO: 'instanceName' a 'customName'
       );
       
       const state = statusInfo?.instance?.state || 'close'; // Evolution API uses 'open', 'connecting', 'close'
@@ -307,22 +331,22 @@ export class EvolutionApiService extends BaseAdapter<
           ? 'qr_code'
           : 'notAuthorized';
       
-      this.logger.log(`[EvolutionApiService] Initial status for '${instanceName}' from Evolution API: '${state}'. Mapped to: '${mappedState}'`);
+      this.logger.log(`[EvolutionApiService] Initial status for '${customName}' from Evolution API: '${state}'. Mapped to: '${mappedState}'`); // CAMBIO: 'instanceName' a 'customName'
 
       const newInstance = await this.prisma.createInstance({
-        idInstance: parseId(instanceName), // idInstance en tu DB es el nombre de Evolution API
+        idInstance: parseId(customName), // CAMBIO: idInstance ahora será el customName
         instanceGuid: instanceId, // instanceGuid en tu DB es el ID real de la instancia
         apiTokenInstance: token,
         user: { connect: { id: userId } },
-        name: instanceName, // El campo 'name' en tu DB es el nombre de la instancia
+        customName: customName, // CAMBIO: 'name' a 'customName'
         state: mappedState,
         settings: {},
       });
-      this.logger.log(`[EvolutionApiService] Instance '${instanceName}' created in DB with initial state: '${mappedState}'.`);
+      this.logger.log(`[EvolutionApiService] Instance '${customName}' created in DB with initial state: '${mappedState}'.`); // CAMBIO: 'instanceName' a 'customName'
       return newInstance;
     } catch (error) {
       this.logger.error(
-        `[EvolutionApiService] Failed to verify or create instance '${instanceName}': ${error.message}. Stack: ${error.stack}`,
+        `[EvolutionApiService] Failed to verify or create instance '${customName}': ${error.message}. Stack: ${error.stack}`, // CAMBIO: 'instanceName' a 'customName'
       );
       throw new HttpException(
         'Invalid credentials or API error',

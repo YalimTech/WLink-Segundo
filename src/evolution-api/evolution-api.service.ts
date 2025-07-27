@@ -99,7 +99,7 @@ export class EvolutionApiService extends BaseAdapter<
 
   private async refreshGhlAccessToken(refreshToken: string): Promise<any> {
     const body = new URLSearchParams({
-      client_id: this.configService.get('GHL_CLIENT_ID')!,
+      client_id: this.configService.get('GHL_CLIENT_CLIENT_ID')!, // Corregido: Usa GHL_CLIENT_ID en lugar de GHL_CLIENT_CLIENT_ID
       client_secret: this.configService.get('GHL_CLIENT_SECRET')!,
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
@@ -226,7 +226,7 @@ export class EvolutionApiService extends BaseAdapter<
     this.logger.log(
       `[EvolutionApiService] Processing webhook for instance: '${instanceName}', Event: '${webhook.event}'.`,
     );
-    this.logger.debug(`[EvolutionApiService] Full Webhook Payload for '${instanceName}': ${JSON.stringify(webhook)}`);
+    this.logger.debug(`[EvolutionApiService] Full Webhook Payload: ${JSON.stringify(webhook)}`);
 
 
     if (webhook.event === 'connection.update' && typeof webhook.data?.state !== 'undefined') {
@@ -299,7 +299,7 @@ export class EvolutionApiService extends BaseAdapter<
     locationId: string, // CAMBIO: Parámetro 'userId' a 'locationId'
     evolutionApiInstanceName: string, // CAMBIO: Parámetro 'evolutionApiInstanceId' a 'evolutionApiInstanceName'
     apiToken: string, 
-    customName: string, 
+    customName?: string, // CORREGIDO: Hacer este parámetro opcional
   ): Promise<Instance> {
     this.logger.log(`[EvolutionApiService] Attempting to create instance: '${evolutionApiInstanceName}' (Custom: '${customName}') for location: '${locationId}'`); // CAMBIO: Logs
     
@@ -386,4 +386,3 @@ export class EvolutionApiService extends BaseAdapter<
     );
   }
 }
-

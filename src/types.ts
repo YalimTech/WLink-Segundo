@@ -1,5 +1,4 @@
 // src/types.ts
-
 import { Request } from 'express';
 
 // =================================================================
@@ -17,13 +16,16 @@ export type InstanceState =
 export interface User {
   id: string;
   companyId?: string | null;
-  locationId?: string | null;
+  locationId?: string | null; // Aunque 'id' es locationId, a veces el payload de GHL lo repite.
+  firstName?: string | null; // Nuevo: Campo para el nombre del usuario de GHL
+  lastName?: string | null;  // Nuevo: Campo para el apellido del usuario de GHL
+  email?: string | null;     // Nuevo: Campo para el email del usuario de GHL
   accessToken?: string | null;
   refreshToken?: string | null;
   tokenExpiresAt?: Date | null;
   instances?: Instance[];
   createdAt: Date;
-  updatedAt: Date;
+  updatedAt: Date; // Asegúrate de que este campo exista en tu schema.prisma también.
 }
 
 export interface Instance {
@@ -31,13 +33,13 @@ export interface Instance {
   idInstance: string;
   name: string;
   apiTokenInstance: string;
-  instanceGuid: string;
-  state: InstanceState;
+  instanceGuid?: string | null; // Puede ser opcional si no siempre se usa
+  state?: InstanceState | null; // Puede ser opcional si no siempre tiene un estado
   settings: any;
   userId: string;
   user?: User;
   createdAt: Date;
-  updatedAt: Date;
+  updatedAt?: Date; // Si lo agregaste en schema.prisma, inclúyelo aquí
 }
 
 // =================================================================
@@ -59,8 +61,11 @@ export interface UpdateInstanceDto {
 // Tipos para creación y actualización en Prisma
 // =================================================================
 
-export type UserCreateData = Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'instances'> & { id?: string };
-export type UserUpdateData = Partial<UserCreateData>;
+// UserCreateData ahora puede incluir firstName, lastName, email
+export type UserCreateData = Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'instances' | 'hasTokens'> & { id?: string };
+// UserUpdateData ahora es más flexible para actualizar campos parciales
+export type UserUpdateData = Partial<Omit<User, 'id' | 'createdAt' | 'updatedAt' | 'instances' | 'hasTokens'>>;
+
 
 // =================================================================
 // Interfaces para Webhooks de Evolution API
@@ -100,12 +105,20 @@ export interface AuthReq extends Request {
   userData?: GhlUserData;
 }
 
+// ✅ ACTUALIZACIÓN: GhlUserData para reflejar los datos que recibes de GHL
 export interface GhlUserData {
   userId: string;
   companyId: string;
   type: 'location' | 'agency';
   activeLocation?: string;
   locationId?: string;
+  // Añadidos campos que se pueden obtener del usuario de GHL
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  fullName?: string; // GHL a veces envía fullName
+  // Otros campos que GHL pueda devolver en el payload inicial o al consultar el usuario
+  // ...
 }
 
 export interface GhlPlatformAttachment {
@@ -148,5 +161,4 @@ export interface GhlContact {
 export interface GhlContactUpsertResponse {
   contact: GhlContact;
 }
-
 

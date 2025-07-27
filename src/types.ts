@@ -30,9 +30,9 @@ export interface User {
 
 export interface Instance {
   id: bigint;
-  idInstance: string; // Identificador único de Evolution API (no modificable)
-  instanceGuid?: string | null;
-  customName?: string | null; // CAMBIO: Renombrado de 'name' a 'customName'
+  idInstance: string; // Identificador único de Evolution API (no modificable). Este es el 'instanceName' de Evolution API.
+  instanceGuid?: string | null; // GUID único generado por Evolution API (si se proporciona)
+  customName?: string | null; // Nombre o descripción editable por el cliente desde su panel
   apiTokenInstance: string;
   state?: InstanceState | null;
   settings: any;
@@ -48,13 +48,13 @@ export interface Instance {
 
 export interface CreateInstanceDto {
   locationId: string;
-  instanceId: string; // Corresponde al idInstance de Evolution API
-  token: string;
-  instanceName: string; // CAMBIO: Este campo ahora se usará para el 'customName'
+  evolutionApiInstanceId: string; // El ID único y no modificable de la instancia en Evolution API (lo que se ingresa en "Instance ID")
+  apiToken: string; // El token de la API para la instancia (lo que se ingresa en "API Token")
+  customName?: string; // El nombre personalizado/editable por el usuario (lo que se ingresa en "Instance Name (optional)")
 }
 
 export interface UpdateInstanceDto {
-  customName: string; // CAMBIO: Renombrado de 'name' a 'customName'
+  customName: string; // Para actualizar el nombre personalizado
 }
 
 // =================================================================
@@ -85,7 +85,7 @@ export interface MessageData {
 
 export interface EvolutionWebhook {
   event: string;
-  instance: string;
+  instance: string; // Se refiere al idInstance único de Evolution API
   data: any;
   sender?: string;
   destination?: string;
@@ -154,5 +154,4 @@ export interface GhlContact {
 export interface GhlContactUpsertResponse {
   contact: GhlContact;
 }
-
 

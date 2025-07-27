@@ -44,7 +44,7 @@ export class EvolutionService {
 
   async sendMessage(
     instanceToken: string,
-    instanceName: string,
+    instanceName: string, // Ya usa instanceName, que es el identificador único de Evolution API
     to: string,
     message: string,
   ) {
@@ -69,7 +69,7 @@ export class EvolutionService {
     }
   }
 
-  async getInstanceStatus(instanceToken: string, instanceName: string) {
+  async getInstanceStatus(instanceToken: string, instanceName: string) { // Ya usa instanceName
     const encodedName = encodeURIComponent(instanceName);
     const url = `${this.baseUrl}/instance/connectionState/${encodedName}`;
     try {
@@ -88,7 +88,7 @@ export class EvolutionService {
 
   async validateInstanceCredentials(
     instanceToken: string,
-    instanceName: string,
+    instanceName: string, // Ya usa instanceName
   ): Promise<boolean> {
     try {
       const status = await this.getInstanceStatus(instanceToken, instanceName);
@@ -118,14 +118,14 @@ export class EvolutionService {
     }
   }
 
-  async createInstance(globalApiToken: string, instanceName: string) {
+  async createInstance(globalApiToken: string, instanceName: string) { // Ya usa instanceName
     const url = `${this.baseUrl}/instance/create`;
     try {
       const response = await lastValueFrom(
         this.http.post(
           url,
           // El cuerpo puede requerir más parámetros según la configuración de tu Evolution API
-          { instanceName },
+          { instanceName }, // Evolution API espera 'instanceName' aquí
           this._getConfig(globalApiToken),
         ),
       );
@@ -141,7 +141,7 @@ export class EvolutionService {
 
   async getQrCode(
     instanceToken: string,
-    instanceName: string,
+    instanceName: string, // Ya usa instanceName
     number?: string,
   ): Promise<{ type: 'qr' | 'code'; data: string }> {
     const encodedName = encodeURIComponent(instanceName);
@@ -178,7 +178,7 @@ export class EvolutionService {
   }
 
 
-  async logoutInstance(instanceToken: string, instanceName: string) {
+  async logoutInstance(instanceToken: string, instanceName: string) { // Ya usa instanceName
     const encodedName = encodeURIComponent(instanceName);
     const url = `${this.baseUrl}/instance/logout/${encodedName}`;
     try {
@@ -195,7 +195,7 @@ export class EvolutionService {
     }
   }
 
-  async deleteInstance(apiToken: string, instanceName: string) {
+  async deleteInstance(apiToken: string, instanceName: string) { // Ya usa instanceName
     const encodedName = encodeURIComponent(instanceName);
     const url = `${this.baseUrl}/instance/delete/${encodedName}`;
     try {
@@ -209,7 +209,7 @@ export class EvolutionService {
     }
   }
 
-  async restartInstance(instanceToken: string, instanceName: string) {
+  async restartInstance(instanceToken: string, instanceName: string) { // Ya usa instanceName
     const encodedName = encodeURIComponent(instanceName);
     const url = `${this.baseUrl}/instance/restart/${encodedName}`;
     try {
@@ -225,7 +225,7 @@ export class EvolutionService {
 
   async setPresence(
     instanceToken: string,
-    instanceName: string,
+    instanceName: string, // Ya usa instanceName
     presence: string,
   ) {
     const url = `${this.baseUrl}/instance/setPresence/${encodeURIComponent(
@@ -247,7 +247,7 @@ export class EvolutionService {
 
   async setWebhook(
     instanceToken: string,
-    instanceName: string,
+    instanceName: string, // Ya usa instanceName
     payload: any,
   ) {
     const url = `${this.baseUrl}/webhook/set/${encodeURIComponent(instanceName)}`;
@@ -262,7 +262,7 @@ export class EvolutionService {
     }
   }
 
-  async findWebhook(instanceToken: string, instanceName: string) {
+  async findWebhook(instanceToken: string, instanceName: string) { // Ya usa instanceName
     const url = `${this.baseUrl}/webhook/find/${encodeURIComponent(instanceName)}`;
     try {
       const response = await lastValueFrom(
@@ -277,7 +277,7 @@ export class EvolutionService {
 
   async setSettings(
     instanceToken: string,
-    instanceName: string,
+    instanceName: string, // Ya usa instanceName
     settings: any,
   ) {
     const url = `${this.baseUrl}/settings/set/${encodeURIComponent(instanceName)}`;
@@ -292,7 +292,7 @@ export class EvolutionService {
     }
   }
 
-  async findSettings(instanceToken: string, instanceName: string) {
+  async findSettings(instanceToken: string, instanceName: string) { // Ya usa instanceName
     const url = `${this.baseUrl}/settings/find/${encodeURIComponent(instanceName)}`;
     try {
       const response = await lastValueFrom(

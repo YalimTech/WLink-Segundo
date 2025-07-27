@@ -12,13 +12,19 @@ datasource db {
 }
 
 model User {
-  id             String     @id
-  companyId      String?
-  accessToken    String     @db.Text
-  refreshToken   String     @db.Text
+  id           String    @id @unique @map("locationId") // GoHighLevel Location ID
+  companyId    String?
+  firstName    String?   // Nuevo: Campo para el nombre del usuario de GHL
+  lastName     String?   // Nuevo: Campo para el apellido del usuario de GHL
+  email        String?   // Nuevo: Campo para el email del usuario de GHL
+  accessToken  String    @db.Text
+  refreshToken String    @db.Text
   tokenExpiresAt DateTime?
-  instances      Instance[]
-  createdAt      DateTime   @default(now())
+  instances    Instance[]
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt // Es buena práctica tener un campo de actualización
+
+  @@map("users")
 }
 
 enum InstanceState {
@@ -31,27 +37,27 @@ enum InstanceState {
 }
 
 model Instance {
-  id               BigInt         @id @default(autoincrement())
+  id                BigInt       @id @default(autoincrement())
 
-  /// Alias legible y único (ej. 'correoejemplo@gmail.com', 'nombreDeEjemplo', etc.)
-  idInstance       String         @unique @db.Text
+  /// Nombre de la Instancia - No modificable (ej. 'correoejemplo@gmail.com', 'nombreDeEjemplo', etc.)
+  idInstance        String       @unique @db.Text
 
   /// GUID único generado por Evolution API
-  instanceGuid     String?        @unique @db.Text
+  instanceGuid      String?      @unique @db.Text
 
-  /// Nombre opcional adicional
-  name             String?
+  /// Nombre opcional adicional - Modificable por el cliente desde su panel (ej. 'Numero de Servicio al Cliente 1', Flota Personal, etc.)
+  name              String?
 
-  apiTokenInstance String         @db.Text
+  apiTokenInstance  String       @db.Text
 
   /// Estado de conexión (mapeado de "stateInstance")
-  state            InstanceState? @map("stateInstance")
+  state             InstanceState? @map("stateInstance")
 
-  userId           String
-  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User         @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  settings         Json?          @default("{}") @db.Json
-  createdAt        DateTime       @default(now())
+  settings          Json?        @default("{}") @db.Json
+  createdAt         DateTime     @default(now())
 
   @@index([userId])
 }

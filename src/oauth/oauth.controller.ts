@@ -29,14 +29,15 @@ export class GhlOauthController {
   async callback(
     @Query()
     query: GhlOAuthCallbackDto & {
-      instanceId?: string;
-      token?: string;
-      instanceName?: string;
+      evolutionApiInstanceId?: string; // Renombrado de 'instanceId'
+      apiToken?: string; // Renombrado de 'token'
+      customName?: string; // Renombrado de 'instanceName'
     },
     @Res() res: Response,
   ) {
-    const { code, instanceId, token, instanceName } = query;
-    this.logger.log(`GHL OAuth callback received. Code: ${code ? 'present' : 'MISSING'}`);
+    // Usar los nuevos nombres para desestructurar la consulta
+    const { code, evolutionApiInstanceId, apiToken, customName } = query;
+    this.logger.log(`GHL OAuth callback recibido. Code: ${code ? 'present' : 'MISSING'}`);
 
     if (!code) {
       this.logger.error('GHL OAuth callback missing code.');
@@ -95,15 +96,16 @@ export class GhlOauthController {
 
       this.logger.log(`Stored/updated GHL tokens for Location: ${respLocationId}`);
 
-      if (instanceId && token && instanceName) {
+      // Usar los nuevos nombres de los parámetros
+      if (evolutionApiInstanceId && apiToken && customName) {
         try {
           await this.evolutionApiService.createEvolutionApiInstanceForUser(
             respLocationId,
-            instanceId,
-            token,
-            instanceName,
+            evolutionApiInstanceId, // Pasar el Evolution API Instance ID
+            apiToken,               // Pasar el API Token
+            customName,             // Pasar el customName
           );
-          this.logger.log(`Evolution API instance ${instanceName} stored for location ${respLocationId}`);
+          this.logger.log(`Evolution API instance ${evolutionApiInstanceId} (Custom Name: ${customName}) stored for location ${respLocationId}`);
         } catch (err) {
           this.logger.error(`Failed to store Evolution API instance: ${err.message}`);
         }
@@ -122,13 +124,6 @@ export class GhlOauthController {
       );
     }
   }
-
-
-
-
-
-
-   
 
   private generateSuccessHtml(): string {
     return `

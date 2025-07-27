@@ -99,7 +99,8 @@ export class EvolutionApiService extends BaseAdapter<
 
   private async refreshGhlAccessToken(refreshToken: string): Promise<any> {
     const body = new URLSearchParams({
-      client_id: this.configService.get('GHL_CLIENT_CLIENT_ID')!, // Corregido: Usa GHL_CLIENT_ID en lugar de GHL_CLIENT_CLIENT_ID
+      // **CORRECCIÓN AQUÍ:** Se cambió 'GHL_CLIENT_CLIENT_ID' a 'GHL_CLIENT_ID'
+      client_id: this.configService.get('GHL_CLIENT_ID')!, 
       client_secret: this.configService.get('GHL_CLIENT_SECRET')!,
       grant_type: 'refresh_token',
       refresh_token: refreshToken,

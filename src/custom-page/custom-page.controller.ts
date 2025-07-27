@@ -120,18 +120,12 @@ export class CustomPageController {
           <meta charset="UTF-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>WLink Bridge - Manager</title>
-          <!-- Tailwind CSS CDN para estilos rápidos y responsivos -->
           <script src="https://cdn.tailwindcss.com"></script>
-          <!-- Fuentes de Google Fonts (Inter) -->
           <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-          <!-- React y ReactDOM CDN -->
           <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
           <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-          <!-- Babel para transpilar JSX en el navegador -->
           <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-          <!-- QRCode.js para generar códigos QR -->
           <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-          <!-- Font Awesome para íconos -->
           <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css"></link>
           <style>
             body {
@@ -188,17 +182,18 @@ export class CustomPageController {
               const [locationId, setLocationId] = useState(null);
               const [encrypted, setEncrypted] = useState(null);
               const [instances, setInstances] = useState([]);
-              const [form, setForm] = useState({ instanceId: '', token: '', customName: '' }); // CAMBIO: 'instanceName' a 'customName'
+              // Updated form state variables to match CreateInstanceDto
+              const [form, setForm] = useState({ evolutionApiInstanceId: '', apiToken: '', customName: '' }); 
               const [qr, setQr] = useState('');
               const [showQr, setShowQr] = useState(false);
               const [qrLoading, setQrLoading] = useState(false); // Estado para el loading del QR
               const pollRef = useRef(null); // Ref para el intervalo de polling del QR
               const mainIntervalRef = useRef(null); // Ref para el intervalo de polling principal
-              const qrInstanceIdRef = useRef(null); // Para guardar el ID de la instancia cuyo QR se está mostrando
+              const qrInstanceIdRef = useRef(null); // Para guardar el ID de la instancia cuyo QR se está mostrando (DB ID)
               const qrCodeDivRef = useRef(null); // Ref para el div donde se renderizará el QR
               const [modal, setModal] = useState({ show: false, message: '', type: '', onConfirm: null, onCancel: null }); // Estado para el modal
               const [ghlUser, setGhlUser] = useState({ name: 'Loading...', email: 'Loading...', hasTokens: false }); // Estado para los datos del usuario GHL
-              const [editingInstanceId, setEditingInstanceId] = useState(null); // Estado para saber qué instancia se está editando
+              const [editingInstanceId, setEditingInstanceId] = useState(null); // Estado para saber qué instancia se está editando (DB ID)
               const [editingCustomName, setEditingCustomName] = useState(''); // CAMBIO: 'editingInstanceName' a 'editingCustomName'
 
               // Función para mostrar el modal personalizado
@@ -288,12 +283,12 @@ export class CustomPageController {
                 try {
                   data = await response.json();
                 } catch (e) {
-                  // CORRECCIÓN: Usar concatenación de strings
+                  // CORRECCIÓN: Usar concatenación de strings para logs
                   console.error('Error parsing JSON from ' + path + '. Status: ' + response.status + ' ' + response.statusText, e, response);
                   throw new Error(response.statusText || 'Invalid JSON response from server');
                 }
                 if (!response.ok) {
-                  // CORRECCIÓN: Usar concatenación de strings
+                  // CORRECCIÓN: Usar concatenación de strings para logs
                   console.error('API request to ' + path + ' failed. Status: ' + response.status + '. Response:', data);
                   throw new Error(data.message || 'API request failed');
                 }
@@ -335,7 +330,7 @@ export class CustomPageController {
                   if (showQr && qrInstanceIdRef.current) {
                     const currentInstance = data.instances.find(inst => String(inst.id) === String(qrInstanceIdRef.current));
                     if (currentInstance && currentInstance.state !== 'qr_code' && currentInstance.state !== 'starting') {
-                      // CORRECCIÓN: Usar concatenación de strings
+                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('Main polling: Closing QR modal as state is now ' + currentInstance.state + '.');
                       clearInterval(pollRef.current);
                       pollRef.current = null;
@@ -367,13 +362,20 @@ export class CustomPageController {
               async function createInstance(e) {
                 e.preventDefault();
                 try {
-                  const payload = { ...form, locationId };
+                  // Payload now matches CreateInstanceDto: evolutionApiInstanceId, apiToken, customName
+                  const payload = { 
+                    locationId, 
+                    evolutionApiInstanceId: form.evolutionApiInstanceId, 
+                    apiToken: form.apiToken, 
+                    customName: form.customName 
+                  };
                   await makeApiRequest('/api/instances', {
                     method: 'POST',
                     body: JSON.stringify(payload),
                   });
                   showModal('Instancia creada exitosamente!', 'success');
-                  setForm({ instanceId: '', token: '', customName: '' }); // CAMBIO: 'instanceName' a 'customName'
+                  // Clear form using new field names
+                  setForm({ evolutionApiInstanceId: '', apiToken: '', customName: '' }); 
                   loadInstances(); // Recargar instancias después de crear una nueva
                 } catch (err) {
                   console.error('Error creating instance:', err);
@@ -395,11 +397,11 @@ export class CustomPageController {
                     setInstances(data.instances); // Actualizar la lista de instancias para reflejar el estado más reciente
 
                     if (updatedInstance) {
-                      // CORRECCIÓN: Usar concatenación de strings
+                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('QR polling for ' + instanceId + ': Fetched state ' + updatedInstance.state);
                       // Si el estado NO es 'qr_code' Y NO es 'starting', cerramos el modal y el polling.
                       if (updatedInstance.state !== 'qr_code' && updatedInstance.state !== 'starting') {
-                        // CORRECCIÓN: Usar concatenación de strings
+                        // CORRECCIÓN: Usar concatenación de strings para logs
                         console.log('QR polling: State ' + updatedInstance.state + ' detected, closing QR modal.');
                         clearInterval(pollRef.current);
                         pollRef.current = null;
@@ -413,7 +415,7 @@ export class CustomPageController {
                         }
                       }
                     } else {
-                      // CORRECCIÓN: Usar concatenación de strings
+                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('QR polling: Instance ' + instanceId + ' not found in fetched data, stopping polling and closing QR.');
                       clearInterval(pollRef.current);
                       pollRef.current = null;
@@ -442,10 +444,10 @@ export class CustomPageController {
                 qrInstanceIdRef.current = id; // Asignar el ID de la instancia al ref para el QR
 
                 try {
-                  // CORRECCIÓN: Usar concatenación de strings
+                  // CORRECCIÓN: Usar concatenación de strings para logs
                   console.log('Attempting to fetch QR for instance ID: ' + id);
                   const res = await makeApiRequest('/api/qr/' + id);
-                  // CORRECCIÓN: Usar concatenación de strings
+                  // CORRECCIÓN: Usar concatenación de strings para logs
                   console.log('QR API response for ' + id + ':', res);
                   console.log('QR response type: ' + res.type + ', data starts with: ' + (res.data ? res.data.substring(0, 50) : 'N/A'));
 
@@ -521,10 +523,10 @@ export class CustomPageController {
                   async () => { // onConfirm callback
                     closeModal(); // Cerrar el modal de confirmación
                     try {
-                      // CORRECCIÓN: Usar concatenación de strings
+                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('Attempting to logout instance ID: ' + id);
                       await makeApiRequest('/api/instances/' + id + '/logout', { method: 'DELETE' });
-                      // CORRECCIÓN: Usar concatenación de strings
+                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('Instance ' + id + ' logout command sent successfully. Reloading instances...');
                       showModal('Comando de desconexión de instancia enviado. El estado se actualizará en breve y requerirá un nuevo escaneo.', 'success');
                       loadInstances(); // Recargar instancias para reflejar el cambio de estado
@@ -545,10 +547,10 @@ export class CustomPageController {
                   async () => { // onConfirm callback
                     closeModal();
                     try {
-                      // CORRECCIÓN: Usar concatenación de strings
+                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('Attempting to delete instance ID: ' + id);
                       await makeApiRequest('/api/instances/' + id, { method: 'DELETE' });
-                      // CORRECCIÓN: Usar concatenación de strings
+                      // CORRECCIÓN: Usar concatenación de strings para logs
                       console.log('Instance ' + id + ' delete command sent. Reloading instances...');
                       showModal('Instancia eliminada exitosamente!', 'success');
                       loadInstances(); // Recargar instancias después de eliminar
@@ -572,7 +574,7 @@ export class CustomPageController {
                 try {
                   await makeApiRequest('/api/instances/' + instanceId, {
                     method: 'PATCH',
-                    body: JSON.stringify({ customName: editingCustomName }), // CAMBIO: 'name' a 'customName'
+                    body: JSON.stringify({ customName: editingCustomName }), // CORRECTO: 'customName'
                   });
                   showModal('Nombre de instancia actualizado exitosamente!', 'success');
                   setEditingInstanceId(null); // Salir del modo de edición
@@ -650,8 +652,8 @@ export class CustomPageController {
                               <div className="flex flex-col items-center sm:items-start">
                                 <input
                                   type="text"
-                                  value={editingCustomName} // CAMBIO: Usar editingCustomName
-                                  onChange={(e) => setEditingCustomName(e.target.value)} // CAMBIO: setEditingCustomName
+                                  value={editingCustomName} // CORRECTO: Usar editingCustomName
+                                  onChange={(e) => setEditingCustomName(e.target.value)} // CORRECTO: setEditingCustomName
                                   className="font-semibold text-lg text-gray-800 border-b border-gray-300 focus:outline-none focus:border-indigo-500 mb-1"
                                 />
                                 <div className="flex gap-2 mt-2">
@@ -672,9 +674,9 @@ export class CustomPageController {
                             ) : (
                               <div className="flex flex-col items-center sm:items-start">
                                 <p className="font-semibold text-lg text-gray-800">
-                                  {inst.customName || 'Unnamed Instance'} {/* CAMBIO: Mostrar customName */}
+                                  {inst.customName || 'Unnamed Instance'} {/* CORRECTO: Mostrar customName */}
                                   <button
-                                    onClick={() => startEditingName(inst.id, inst.customName || '')} // CAMBIO: Pasar customName
+                                    onClick={() => startEditingName(inst.id, inst.customName || '')} // CORRECTO: Pasar customName
                                     className="ml-2 text-blue-500 hover:text-blue-700 text-sm"
                                     title="Edit Instance Name"
                                   >
@@ -757,39 +759,39 @@ export class CustomPageController {
                     </h2>
                     <form onSubmit={createInstance} className="space-y-4">
                       <div>
-                        <label htmlFor="instanceId" className="block text-sm font-medium text-gray-700">Instance ID</label>
+                        <label htmlFor="evolutionApiInstanceId" className="block text-sm font-medium text-gray-700">Instance ID</label>
                         <input
                           type="text"
-                          id="instanceId"
+                          id="evolutionApiInstanceId" // Updated ID
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.instanceId}
-                          onChange={(e) => setForm({ ...form, instanceId: e.target.value })}
+                          value={form.evolutionApiInstanceId} // Updated value binding
+                          onChange={(e) => setForm({ ...form, evolutionApiInstanceId: e.target.value })} // Updated onChange
                           placeholder="e.g., 1234567890"
                           required
                         />
                       </div>
                       <div>
-                        <label htmlFor="token" className="block text-sm font-medium text-gray-700">API Token</label>
+                        <label htmlFor="apiToken" className="block text-sm font-medium text-gray-700">API Token</label>
                         <input
                           type="text"
-                          id="token"
+                          id="apiToken" // Updated ID
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.token}
-                          onChange={(e) => setForm({ ...form, token: e.target.value })}
+                          value={form.apiToken} // Updated value binding
+                          onChange={(e) => setForm({ ...form, apiToken: e.target.value })} // Updated onChange
                           placeholder="Your GREEN-API token"
                           required
                         />
                       </div>
                       <div>
-                        <label htmlFor="customName" className="block text-sm font-medium text-gray-700">Instance Name (optional)</label> {/* CAMBIO: htmlFor y label */}
+                        <label htmlFor="customName" className="block text-sm font-medium text-gray-700">Instance Name (optional)</label>
                         <input
                           type="text"
-                          id="customName" {/* CAMBIO: id */}
+                          id="customName"
                           className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                          value={form.customName} // CAMBIO: form.instanceName a form.customName
-                          onChange={(e) => setForm({ ...form, customName: e.target.value })} // CAMBIO: instanceName a customName
+                          value={form.customName}
+                          onChange={(e) => setForm({ ...form, customName: e.target.value })}
                           placeholder="e.g., Sales Team WhatsApp"
-                          required
+                          // Removed 'required' as per the label "optional"
                         />
                       </div>
                       <button
@@ -876,5 +878,3 @@ export class CustomPageController {
     `;
   }
 }
-
-

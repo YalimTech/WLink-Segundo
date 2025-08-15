@@ -191,7 +191,7 @@ export class CustomPageController {
               const [encrypted, setEncrypted] = useState(null);
               const [instances, setInstances] = useState([]);
               // CAMBIO: Actualizado form state para usar instanceName y token
-              const [form, setForm] = useState({ instanceName: '', token: '', customName: '' }); 
+              const [form, setForm] = useState({ instanceId: '', instanceName: '', token: '', customName: '' }); 
               const [qr, setQr] = useState('');
               const [showQr, setShowQr] = useState(false);
               const [qrLoading, setQrLoading] = useState(false); 
@@ -371,9 +371,10 @@ export class CustomPageController {
                   // CAMBIO: Payload ahora usa 'instanceName' y 'token' directamente del formulario
                   const payload = { 
                     locationId, 
-                    instanceName: form.instanceName, // Usar form.instanceName
-                    token: form.token,             // Usar form.token
-                    customName: form.customName    // Usar form.customName
+                    instanceId: form.instanceId,   // GUID/ID de Evolution API
+                    instanceName: form.instanceName, // Nombre único de Evolution API
+                    token: form.token,               // API Token
+                    customName: form.customName      // Opcional
                   };
                   await makeApiRequest('/api/instances', {
                     method: 'POST',
@@ -381,7 +382,7 @@ export class CustomPageController {
                   });
                   showModal('Instancia creada exitosamente!', 'success');
                   // CAMBIO: Limpiar formulario usando los nuevos nombres de campo
-                  setForm({ instanceName: '', token: '', customName: '' }); 
+                  setForm({ instanceId: '', instanceName: '', token: '', customName: '' }); 
                   loadInstances(); // Recargar instancias después de crear una nueva
                 } catch (err) {
                   console.error('Error creating instance:', err);
@@ -748,6 +749,18 @@ export class CustomPageController {
                       <i className="fas fa-plus-circle text-green-500 mr-2"></i> Add New Instance
                     </h2>
                     <form onSubmit={createInstance} className="space-y-4">
+                      <div>
+                        <label htmlFor="instanceGuid" className="block text-sm font-medium text-gray-700">Instance ID (GUID)</label>
+                        <input
+                          type="text"
+                          id="instanceGuid"
+                          className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
+                          value={form.instanceId || ''}
+                          onChange={(e) => setForm({ ...form, instanceId: e.target.value })}
+                          placeholder="e.g., abcd-1234-guid"
+                          required
+                        />
+                      </div>
                       <div>
                         {/* CAMBIO: Renombrado a 'Instance Name' para el ID único de Evolution API */}
                         <label htmlFor="instanceName" className="block text-sm font-medium text-gray-700">Instance Name</label>

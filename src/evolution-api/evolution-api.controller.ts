@@ -102,8 +102,8 @@ export class EvolutionApiController {
     }
     // Validar los campos del DTO según la nueva nomenclatura
     // CAMBIO: Usar dto.instanceName en lugar de dto.evolutionApiInstanceId
-    if (!dto.instanceName || !dto.token) { // customName es opcional
-      throw new HttpException('Evolution API Instance Name and API Token are required.', HttpStatus.BAD_REQUEST);
+    if (!dto.instanceName || !dto.token || !dto.instanceId) {
+      throw new HttpException('Evolution API Instance ID (GUID), Instance Name and API Token are required.', HttpStatus.BAD_REQUEST);
     }
     try {
       // CAMBIO: Usar los nuevos nombres de parámetros
@@ -112,6 +112,7 @@ export class EvolutionApiController {
         dto.instanceName, // Pasar el Evolution API Instance Name
         dto.token,        // Pasar el Token de API
         dto.customName,   // Pasar el customName (puede ser undefined si es opcional)
+        dto.instanceId,   // NUEVO: persistir el GUID si el cliente lo envía
       );
       return { success: true, instance };
     } catch (err: any) {

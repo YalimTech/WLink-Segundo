@@ -57,6 +57,8 @@ export interface CreateInstanceDto {
   token: string; // El token de la API para la instancia (lo que se ingresa en "API Token")
   // CAMBIO: Asegurado que se llame 'customName'
   customName?: string; // El nombre personalizado/editable por el usuario (lo que se ingresa en "Instance Name (optional)")
+  // NUEVO: Permitir enviar el GUID/ID interno de Evolution API cuando el usuario lo proporciona
+  instanceId: string; // GUID/ID de la instancia en Evolution API (obligatorio según el flujo solicitado)
 }
 
 export interface UpdateInstanceDto {

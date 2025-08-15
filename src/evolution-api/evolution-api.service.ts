@@ -299,8 +299,9 @@ export class EvolutionApiService extends BaseAdapter<
   public async createEvolutionApiInstanceForUser(
     locationId: string, // CAMBIO: Parámetro 'userId' a 'locationId'
     evolutionApiInstanceName: string, // CAMBIO: Parámetro 'evolutionApiInstanceId' a 'evolutionApiInstanceName'
-    apiToken: string, 
-    customName?: string, // CORREGIDO: Hacer este parámetro opcional
+    apiToken: string,
+    customName?: string,
+    providedInstanceId?: string, // NUEVO: permitir que el cliente envíe el GUID/instanceId
   ): Promise<Instance> {
     this.logger.log(`[EvolutionApiService] Attempting to create instance: '${evolutionApiInstanceName}' (Custom: '${customName}') for location: '${locationId}'`); // CAMBIO: Logs
     
@@ -346,7 +347,7 @@ export class EvolutionApiService extends BaseAdapter<
 
       const newInstance = await this.prisma.createInstance({
         instanceName: evolutionApiInstanceName, // CAMBIO: instanceName será el ID único de Evolution API
-        instanceId: statusInfo?.instance?.instanceId || null, // CAMBIO: instanceId será el GUID de Evolution
+        instanceId: providedInstanceId || statusInfo?.instance?.instanceId || null, // Preferir el proporcionado
         apiTokenInstance: apiToken, 
         user: { connect: { locationId: locationId } }, // CAMBIO: Usar locationId para conectar al usuario
         customName: customName || `Instance ${evolutionApiInstanceName}`, // Se usa el customName, o uno por defecto

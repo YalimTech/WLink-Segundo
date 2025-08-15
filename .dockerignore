@@ -1,0 +1,7 @@
+.gitignore
+.git
+.idea
+node_modules
+.env.example
+README.md
+README.ing.md

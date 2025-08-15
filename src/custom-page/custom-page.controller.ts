@@ -758,7 +758,7 @@ export class CustomPageController {
                           value={form.instanceName} 
                           onChange={(e) => setForm({ ...form, instanceName: e.target.value })} 
                           placeholder="e.g., 1234567890"
-                          required {/* CAMBIO: Este campo es obligatorio */}
+                          required
                         />
                       </div>
                       <div>
@@ -771,7 +771,7 @@ export class CustomPageController {
                           value={form.token} 
                           onChange={(e) => setForm({ ...form, token: e.target.value })} 
                           placeholder="Your token"
-                          required {/* CAMBIO: Este campo es obligatorio */}
+                          required
                         />
                       </div>
                       <div>
@@ -784,7 +784,7 @@ export class CustomPageController {
                           value={form.customName} 
                           onChange={(e) => setForm({ ...form, customName: e.target.value })} 
                           placeholder="e.g., Sales Team WhatsApp"
-                          required {/* CAMBIO: Este campo ahora es obligatorio */}
+                          required
                         />
                       </div>
                       <button

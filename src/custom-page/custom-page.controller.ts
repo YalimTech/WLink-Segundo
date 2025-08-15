@@ -23,6 +23,26 @@ export class CustomPageController {
     private readonly configService: ConfigService,
   ) {}
 
+  // Alias: GET /app  → devuelve la misma página
+  @Get()
+  async getRoot(@Res() res: Response) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.type('html');
+    res.send(this.generateCustomPageHTML());
+  }
+
+  // Alias: GET /app/custom-page  → devuelve la misma página
+  @Get('custom-page')
+  async getCustomPageAlias(@Res() res: Response) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.type('html');
+    res.send(this.generateCustomPageHTML());
+  }
+
   @Get('whatsapp')
   async getCustomPage(@Res() res: Response) {
     // Encabezados mínimos; el CSP y frame-ancestors ya se gestionan con Helmet en main.ts

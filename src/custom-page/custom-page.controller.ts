@@ -775,8 +775,7 @@ export class CustomPageController {
                         />
                       </div>
                       <div>
-                        {/* CAMBIO: Etiqueta a 'Instance Custom Name' para distinguirlo, y ahora es obligatorio */}
-                        <label htmlFor="customName" className="block text-sm font-medium text-gray-700">Instance Custom Name</label> 
+                        <label htmlFor="customName" className="block text-sm font-medium text-gray-700">Instance Custom Name (Optional)</label> 
                         <input
                           type="text"
                           id="customName" 
@@ -784,7 +783,6 @@ export class CustomPageController {
                           value={form.customName} 
                           onChange={(e) => setForm({ ...form, customName: e.target.value })} 
                           placeholder="e.g., Sales Team WhatsApp"
-                          required
                         />
                       </div>
                       <button

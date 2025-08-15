@@ -19,13 +19,34 @@ async function bootstrap() {
   app.use(json({ limit: '1mb' }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true }));
-  app.use(helmet());
+  // Permitir que la app se embeba dentro de GHL y cargar recursos externos
+  app.use(
+    helmet({
+      frameguard: false, // No forzar SAMEORIGIN
+      crossOriginOpenerPolicy: false,
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+      contentSecurityPolicy: {
+        useDefaults: false,
+        directives: {
+          defaultSrc: ["'self'", 'https:', 'data:'],
+          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", 'https:'],
+          styleSrc: ["'self'", "'unsafe-inline'", 'https:'],
+          imgSrc: ["'self'", 'data:', 'https:'],
+          connectSrc: ["'self'", 'https:', 'http:', 'data:'],
+          frameAncestors: ['*'],
+          frameSrc: ['*'],
+          objectSrc: ["'none'"],
+        },
+      },
+    }),
+  );
   app.enableShutdownHooks();
   // --- Fin de tu configuración ---
 
   // Habilitar CORS para permitir peticiones desde el frontend.
   app.enableCors({
-    origin: '*', // Puedes restringirlo a dominios específicos en producción
+    origin: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });

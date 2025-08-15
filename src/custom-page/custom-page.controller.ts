@@ -25,12 +25,11 @@ export class CustomPageController {
 
   @Get('whatsapp')
   async getCustomPage(@Res() res: Response) {
-    // Configuración de encabezados para permitir el iframing y CORS
-    res.setHeader('X-Frame-Options', 'ALLOWALL');
-    res.setHeader('Content-Security-Policy', 'frame-ancestors *');
+    // Encabezados mínimos; el CSP y frame-ancestors ya se gestionan con Helmet en main.ts
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, PATCH, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
+    res.type('html');
     res.send(this.generateCustomPageHTML());
   }
 

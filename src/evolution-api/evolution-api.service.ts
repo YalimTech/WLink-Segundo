@@ -417,19 +417,44 @@ export class EvolutionApiService extends BaseAdapter<
       throw new IntegrationError('Missing contactId to post inbound message to GHL');
     }
 
-    try {
-      await httpClient.post('/conversations/messages', {
+    const conversationProviderId = this.configService.get<string>('GHL_CONVERSATION_PROVIDER_ID');
+
+    const createMessage = async () =>
+      httpClient.post('/conversations/messages', {
         locationId,
         contactId: message.contactId,
+        conversationProviderId,
+        channel: 'whatsapp',
         direction: 'inbound',
         message: message.message,
         attachments: message.attachments ?? [],
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
       });
+
+    try {
+      await createMessage();
     } catch (err) {
-      const axiosErr = err as any;
+      const axiosErr = err as AxiosError | any;
+      const status = axiosErr?.response?.status;
+      // Si GHL exige una conversación previa, la creamos y reintentamos
+      if (status === 404 || status === 400) {
+        try {
+          await httpClient.post('/conversations', {
+            locationId,
+            contactId: message.contactId,
+            conversationProviderId,
+            channel: 'whatsapp',
+          });
+          await createMessage();
+          return;
+        } catch (err2) {
+          this.logger.error(
+            `[EvolutionApiService] Failed to create conversation before posting message: ${JSON.stringify((err2 as any)?.response?.data)}`,
+          );
+        }
+      }
       this.logger.error(
-        `[EvolutionApiService] Failed to post inbound message to GHL: ${axiosErr?.response?.status} ${JSON.stringify(axiosErr?.response?.data)}`,
+        `[EvolutionApiService] Failed to post inbound message to GHL: ${status} ${JSON.stringify(axiosErr?.response?.data)}`,
       );
       throw new IntegrationError('Failed to post inbound message to GHL');
     }

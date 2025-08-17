@@ -93,7 +93,7 @@ export class WebhooksController {
 
   @Post('ghl')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(DynamicInstanceGuard) // Asumo que GHL webhooks también podrían usar este guard si es necesario
+  // Nota: NO usamos DynamicInstanceGuard aquí porque GHL no envía 'payload.instance'.
   async handleGhlWebhook(
     @Body() ghlWebhook: GhlWebhookDto,
     @Req() request: Request,

@@ -100,10 +100,12 @@ export class EvolutionApiController {
                   instance.apiTokenInstance,
                   instance.instanceName,
                   {
-                    url: expectedUrl,
-                    headers: { Authorization: `Bearer ${instance.apiTokenInstance}` },
-                    events: ['messages.upsert', 'connection.update'],
-                    enabled: true,
+                    webhook: {
+                      url: expectedUrl,
+                      headers: { Authorization: `Bearer ${instance.apiTokenInstance}` },
+                      events: ['messages.upsert', 'connection.update'],
+                      enabled: true,
+                    },
                   },
                 );
                 this.logger.log(`[getInstances] Webhook ensured for instance '${instance.instanceName}' -> ${expectedUrl}`);

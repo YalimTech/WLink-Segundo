@@ -364,13 +364,14 @@ export class EvolutionApiService extends BaseAdapter<
         } else {
           const webhookUrl = `${appUrl.replace(/\/$/, '')}/webhooks/evolution`;
           const payload = {
-            // Evolution v2 permite registrar URL y headers; enviamos Authorization Bearer con el token de la instancia
-            url: webhookUrl,
-            headers: {
-              Authorization: `Bearer ${apiToken}`,
+            webhook: {
+              url: webhookUrl,
+              headers: {
+                Authorization: `Bearer ${apiToken}`,
+              },
+              events: ['messages.upsert', 'connection.update'],
+              enabled: true,
             },
-            events: ['messages.upsert', 'connection.update'],
-            enabled: true,
           } as any;
           await this.evolutionService.setWebhook(apiToken, evolutionApiInstanceName, payload);
           this.logger.log(`[EvolutionApiService] Webhook set for instance '${evolutionApiInstanceName}' -> ${webhookUrl}`);

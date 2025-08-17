@@ -409,7 +409,7 @@ export class EvolutionApiService extends BaseAdapter<
     message: GhlPlatformMessage,
   ): Promise<void> {
     this.logger.log(
-      `Posting inbound message to GHL for location ${locationId}: ${message.message}`,
+      `Posting message to GHL for location ${locationId} (direction=${message.direction}): ${message.message}`,
     );
     // API v2 de GHL: crear mensaje en conversación
     const httpClient = await this.getHttpClient(locationId);
@@ -422,21 +422,26 @@ export class EvolutionApiService extends BaseAdapter<
     const conversationProviderId = this.configService.get<string>('GHL_CONVERSATION_PROVIDER_ID');
     const messageTypeEnv = (this.configService.get<string>('GHL_MESSAGE_TYPE') || 'SMS').toUpperCase();
 
-    const createMessage = async (override: Partial<Record<string, any>> = {}) =>
-      httpClient.post('/conversations/messages', {
+    const createMessage = async (override: Partial<Record<string, any>> = {}) => {
+      const base: any = {
         locationId,
         contactId: message.contactId,
-        conversationProviderId,
-        providerId: conversationProviderId, // algunas cuentas usan 'providerId'
         channel: 'whatsapp',
         type: messageTypeEnv,
-        direction: 'inbound',
-        status: 'delivered',
+        direction: message.direction || 'inbound',
+        status: message.direction === 'outbound' ? 'sent' : 'delivered',
         message: message.message,
         attachments: message.attachments ?? [],
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
         ...override,
-      });
+      };
+      // Solo incluir el provider para mensajes salientes (los entrantes no deben llevarlo)
+      if ((message.direction || 'inbound') === 'outbound') {
+        base.conversationProviderId = conversationProviderId;
+        base.providerId = conversationProviderId;
+      }
+      return httpClient.post('/conversations/messages', base);
+    };
 
     try {
       await createMessage();
@@ -446,14 +451,17 @@ export class EvolutionApiService extends BaseAdapter<
       // Si GHL exige una conversación previa, la creamos y reintentamos
       if (status === 404 || status === 400) {
         try {
-          await httpClient.post('/conversations', {
+          const convo: any = {
             locationId,
             contactId: message.contactId,
-            conversationProviderId,
-            providerId: conversationProviderId,
             channel: 'whatsapp',
             type: messageTypeEnv,
-          });
+          };
+          if ((message.direction || 'inbound') === 'outbound') {
+            convo.conversationProviderId = conversationProviderId;
+            convo.providerId = conversationProviderId;
+          }
+          await httpClient.post('/conversations', convo);
           await createMessage();
           return;
         } catch (err2) {

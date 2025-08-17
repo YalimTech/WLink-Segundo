@@ -64,7 +64,9 @@ export class EvolutionService {
         ),
       );
     } catch (error) {
-      this.logger.error(`Error sending message via Evolution API: ${error.message}`, error.stack);
+      const status = (error as any)?.response?.status;
+      const data = (error as any)?.response?.data;
+      this.logger.error(`Error sending message via Evolution API: ${error.message} Status: ${status} Data: ${JSON.stringify(data)}`, (error as any).stack);
       throw new HttpException('Error sending message via Evolution API', HttpStatus.BAD_REQUEST);
     }
   }

@@ -155,8 +155,9 @@ export class EvolutionApiService extends BaseAdapter<
     } catch (error) {
       const axiosError = error as AxiosError;
       const status = axiosError.response?.status;
-      if (status === 404) {
-        this.logger.warn(`Contact with phone ${formattedPhone} not found in GHL.`);
+      if (status === 404 || status === 400) {
+        // Algunos tenants devuelven 400 en lookup no encontrado
+        this.logger.warn(`Contact with phone ${formattedPhone} not found in GHL (status ${status}).`);
         return null;
       }
       this.logger.error(
@@ -340,11 +341,16 @@ export class EvolutionApiService extends BaseAdapter<
       // IMPORTANTE: no sobrescribir el nombre del contacto cuando es un mensaje saliente (fromMe=true)
       let ghlContact: GhlContact | null = null;
       if (isFromAgent) {
-        // Solo buscar, no crear/actualizar
+        // Solo buscar; si no existe, lo creamos con nombre genérico del cliente (no el del agente)
         ghlContact = await this.getGhlContactByPhone(instance.locationId, contactPhone);
         if (!ghlContact) {
-          this.logger.error(`[EvolutionApiService] Outgoing message for a non-existing contact ${contactPhone}. Skipping.`);
-          return;
+          const genericName = `WhatsApp User ${contactPhone.slice(-4)}`;
+          ghlContact = await this.findOrCreateGhlContact(
+            instance.locationId,
+            contactPhone,
+            genericName,
+            instance.instanceName,
+          );
         }
       } else {
         const senderName = data.pushName || `WhatsApp User ${contactPhone.slice(-4)}`;
@@ -528,20 +534,17 @@ export class EvolutionApiService extends BaseAdapter<
     const messageTypeEnv = (this.configService.get<string>('GHL_MESSAGE_TYPE') || 'WHATSAPP').toUpperCase();
 
     const createMessage = async (override: Partial<Record<string, any>> = {}) => {
-      // Para inbound, enviamos con channel/type y provider; si GHL valida distinto,
-      // los reintentos de abajo probarán variantes sin estos campos.
+      // Para inbound, enviamos payload mínimo para que GHL lo pinte del lado del cliente;
+      // si el tenant exige channel/type, los reintentos lo agregan.
       if ((message.direction || 'inbound') === 'inbound') {
         const inboundPayload: any = {
           locationId,
           contactId: message.contactId,
-          channel: 'whatsapp',
-          type: messageTypeEnv,
           direction: 'inbound',
           status: 'delivered',
           message: message.message,
           attachments: message.attachments ?? [],
           timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
-          // Importante: NO incluir providerId para inbound; GHL podría tratarlo como saliente
           ...override,
         };
         return httpClient.post('/conversations/messages', inboundPayload);
@@ -602,6 +605,15 @@ export class EvolutionApiService extends BaseAdapter<
       }
       // Fallbacks por validación de esquema/enum
       if (status === 422) {
+        // Reintentar agregando type/channel
+        try {
+          await createMessage({ type: messageTypeEnv });
+          return;
+        } catch {}
+        try {
+          await createMessage({ channel: 'whatsapp', type: 'WHATSAPP' });
+          return;
+        } catch {}
         try {
           await createMessage({ providerId: undefined });
           return;

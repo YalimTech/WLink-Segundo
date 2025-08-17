@@ -52,17 +52,37 @@ export class EvolutionService {
       instanceName,
     )}`;
     try {
-      await lastValueFrom(
-        this.http.post(
-          url,
-          {
-            number: to,
-            options: { delay: 1200, presence: 'composing' },
-            textMessage: { text: message },
-          },
-          this._getConfig(instanceToken),
-        ),
-      );
+      // Muchas instalaciones de Evolution v2 esperan 'text' a nivel raíz.
+      // Intento 1: payload plano con 'text'
+      try {
+        await lastValueFrom(
+          this.http.post(
+            url,
+            {
+              number: to,
+              options: { delay: 1200, presence: 'composing' },
+              text: message,
+            },
+            this._getConfig(instanceToken),
+          ),
+        );
+        return;
+      } catch (err1) {
+        const status1 = (err1 as any)?.response?.status;
+        // Intento 2: estructura anidada 'textMessage'
+        await lastValueFrom(
+          this.http.post(
+            url,
+            {
+              number: to,
+              options: { delay: 1200, presence: 'composing' },
+              textMessage: { text: message },
+            },
+            this._getConfig(instanceToken),
+          ),
+        );
+        return;
+      }
     } catch (error) {
       const status = (error as any)?.response?.status;
       const data = (error as any)?.response?.data;

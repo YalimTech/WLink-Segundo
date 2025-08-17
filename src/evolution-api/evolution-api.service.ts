@@ -487,24 +487,37 @@ export class EvolutionApiService extends BaseAdapter<
     const messageTypeEnv = (this.configService.get<string>('GHL_MESSAGE_TYPE') || 'SMS').toUpperCase();
 
     const createMessage = async (override: Partial<Record<string, any>> = {}) => {
-      const base: any = {
+      // Para inbound, GHL debe tratarlo como mensaje entrante puro: sin channel/type/provider
+      if ((message.direction || 'inbound') === 'inbound') {
+        const inboundPayload: any = {
+          locationId,
+          contactId: message.contactId,
+          direction: 'inbound',
+          status: 'delivered',
+          message: message.message,
+          attachments: message.attachments ?? [],
+          timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
+          ...override,
+        };
+        return httpClient.post('/conversations/messages', inboundPayload);
+      }
+
+      // Para outbound, incluimos provider/canal
+      const outboundPayload: any = {
         locationId,
         contactId: message.contactId,
         channel: 'whatsapp',
         type: messageTypeEnv,
-        direction: message.direction || 'inbound',
-        status: message.direction === 'outbound' ? 'sent' : 'delivered',
+        direction: 'outbound',
+        status: 'sent',
         message: message.message,
         attachments: message.attachments ?? [],
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
         ...override,
       };
-      // Solo incluir el provider para mensajes salientes (los entrantes no deben llevarlo)
-      if ((message.direction || 'inbound') === 'outbound') {
-        base.conversationProviderId = conversationProviderId;
-        base.providerId = conversationProviderId;
-      }
-      return httpClient.post('/conversations/messages', base);
+      outboundPayload.conversationProviderId = conversationProviderId;
+      outboundPayload.providerId = conversationProviderId;
+      return httpClient.post('/conversations/messages', outboundPayload);
     };
 
     try {

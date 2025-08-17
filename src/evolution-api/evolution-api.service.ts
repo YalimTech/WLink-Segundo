@@ -261,7 +261,7 @@ export class EvolutionApiService extends BaseAdapter<
       } else {
         this.logger.warn(`[EvolutionApiService] Webhook for instance '${instanceName}' received, but could not find/update it in DB. Check instance name.`);
       }
-    } else if (webhook.event === 'messages.upsert' && webhook.data?.key?.remoteJid) {
+    } else if ((webhook.event === 'messages.upsert' || webhook.event === 'MESSAGES_UPSERT') && webhook.data?.key?.remoteJid) {
       // Buscar la instancia por su instanceName (que es el 'instance' del webhook)
       const instance = await this.prisma.getInstance(instanceName);
       if (!instance) {

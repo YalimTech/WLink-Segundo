@@ -15,12 +15,11 @@ export class EvolutionApiTransformer implements MessageTransformer<GhlPlatformMe
       messageText = webhook.data.message.extendedTextMessage.text;
     }
     
-    // El 'locationId' y 'contactId' se añaden en el servicio.
+    // Determinar dirección: si viene del número de la instancia (fromMe=true) es outbound, si no inbound
+    const isFromAgent = Boolean(webhook.data?.key?.fromMe);
     const platformMessage: Partial<GhlPlatformMessage> = {
-      direction: 'inbound',
+      direction: isFromAgent ? 'outbound' : 'inbound',
       message: messageText.trim(),
-      // ✅ CORRECCIÓN: Convertir explícitamente el timestamp a número antes de multiplicar.
-      // Esto satisface a TypeScript y previene errores si el timestamp llega como un string.
       timestamp: webhook.timestamp ? new Date(Number(webhook.timestamp) * 1000) : new Date(),
     };
 

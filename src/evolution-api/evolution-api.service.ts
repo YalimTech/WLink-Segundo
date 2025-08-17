@@ -187,6 +187,41 @@ export class EvolutionApiService extends BaseAdapter<
     }
   }
 
+  private normalizePhoneE164(phone: string): string {
+    if (!phone) return '';
+    const digits = phone.replace(/[^0-9]/g, '');
+    return phone.startsWith('+') ? phone : `+${digits}`;
+  }
+
+  private normalizeDigits(phone: string): string {
+    return (phone || '').replace(/[^0-9]/g, '');
+  }
+
+  private async sendWhatsAppMessageWithRetry(
+    instanceToken: string,
+    instanceName: string,
+    toPhone: string,
+    text: string,
+  ): Promise<void> {
+    // Primer intento: dígitos sin '+' (formato que Evolution suele aceptar)
+    const digits = this.normalizeDigits(toPhone);
+    try {
+      await this.evolutionService.sendMessage(instanceToken, instanceName, digits, text);
+      return;
+    } catch (err: any) {
+      const status = err?.response?.status;
+      // Reintento con formato E.164
+      try {
+        const e164 = this.normalizePhoneE164(toPhone);
+        await this.evolutionService.sendMessage(instanceToken, instanceName, e164, text);
+        return;
+      } catch (err2: any) {
+        this.logger.error(`Error sending message via Evolution API (digits=${digits} / e164=${this.normalizePhoneE164(toPhone)}): ${status || ''} ${err2?.response?.status || ''}`);
+        throw new IntegrationError('Failed to send message via Evolution API');
+      }
+    }
+  }
+
   private async findOrCreateGhlContact(
     locationId: string,
     phone: string,
@@ -228,9 +263,10 @@ export class EvolutionApiService extends BaseAdapter<
     if (instance.state !== 'authorized')
       throw new IntegrationError(`Instance ${instanceName} is not authorized`); // CAMBIO: Usar 'instanceName'
 
-    await this.evolutionService.sendMessage(
+    // Enviar con reintentos de formato (Evolution API varia exigencia del número)
+    await this.sendWhatsAppMessageWithRetry(
       instance.apiTokenInstance,
-      instance.instanceName, // CAMBIO: Usar 'instanceName'
+      instance.instanceName,
       ghlWebhook.phone,
       ghlWebhook.message,
     );

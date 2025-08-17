@@ -141,6 +141,8 @@ export interface GhlPlatformMessage {
   phone?: string;
   message: string;
   direction: 'inbound' | 'outbound';
+  // Tipo requerido por GHL v2 Conversations (ej.: 'WHATSAPP')
+  type?: 'WHATSAPP' | 'SMS' | 'EMAIL' | 'INSTAGRAM' | 'MESSENGER' | 'UNKNOWN';
   attachments?: GhlPlatformAttachment[];
   timestamp?: Date;
 }

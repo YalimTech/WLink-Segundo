@@ -421,16 +421,19 @@ export class EvolutionApiService extends BaseAdapter<
 
     const conversationProviderId = this.configService.get<string>('GHL_CONVERSATION_PROVIDER_ID');
 
-    const createMessage = async () =>
+    const createMessage = async (override: Partial<Record<string, any>> = {}) =>
       httpClient.post('/conversations/messages', {
         locationId,
         contactId: message.contactId,
         conversationProviderId,
+        providerId: conversationProviderId, // algunas cuentas usan 'providerId'
         channel: 'whatsapp',
+        type: 'WHATSAPP',
         direction: 'inbound',
         message: message.message,
         attachments: message.attachments ?? [],
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
+        ...override,
       });
 
     try {
@@ -445,7 +448,9 @@ export class EvolutionApiService extends BaseAdapter<
             locationId,
             contactId: message.contactId,
             conversationProviderId,
+            providerId: conversationProviderId,
             channel: 'whatsapp',
+            type: 'WHATSAPP',
           });
           await createMessage();
           return;
@@ -454,6 +459,17 @@ export class EvolutionApiService extends BaseAdapter<
             `[EvolutionApiService] Failed to create conversation before posting message: ${JSON.stringify((err2 as any)?.response?.data)}`,
           );
         }
+      }
+      // Fallbacks por validación de enum 'type'
+      if (status === 422) {
+        try {
+          await createMessage({ type: 'whatsapp' });
+          return;
+        } catch {}
+        try {
+          await createMessage({ type: undefined });
+          return;
+        } catch {}
       }
       this.logger.error(
         `[EvolutionApiService] Failed to post inbound message to GHL: ${status} ${JSON.stringify(axiosErr?.response?.data)}`,

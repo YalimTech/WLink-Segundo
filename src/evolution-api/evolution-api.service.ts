@@ -288,6 +288,46 @@ export class EvolutionApiService extends BaseAdapter<
     return data.contact;
   }
 
+  // Variante que recibe la instancia completa y añade avatarUrl si está disponible
+  private async findOrCreateGhlContactForInstance(
+    instance: Instance,
+    phone: string,
+    name: string,
+    preserveExistingName: boolean = false,
+  ): Promise<GhlContact> {
+    const httpClient = await this.getHttpClient(instance.locationId);
+    const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+    const tag = `whatsapp-instance-${instance.instanceName}`;
+
+    const upsertPayload: any = {
+      locationId: instance.locationId,
+      phone: formattedPhone,
+      tags: [tag],
+      source: 'EvolutionAPI Integration',
+    } as GhlContactUpsertRequest;
+    if (!preserveExistingName && name) {
+      upsertPayload.name = name;
+    }
+    try {
+      const remoteJid = `${this.normalizeDigits(phone)}@s.whatsapp.net`;
+      const avatarUrl = await this.evolutionService.getProfilePic(
+        instance.apiTokenInstance,
+        instance.instanceName,
+        remoteJid,
+      );
+      if (avatarUrl) (upsertPayload as any).avatarUrl = avatarUrl;
+    } catch {}
+
+    const { data } = await httpClient.post<GhlContactUpsertResponse>(
+      '/contacts/upsert',
+      upsertPayload,
+    );
+    if (!data?.contact) {
+      throw new IntegrationError('Could not get contact from GHL upsert response.');
+    }
+    return data.contact;
+  }
+
   public async handlePlatformWebhook(
     ghlWebhook: GhlWebhookDto,
     instanceName: string, // CAMBIO: Parámetro 'instanceId' a 'instanceName'
@@ -375,27 +415,25 @@ export class EvolutionApiService extends BaseAdapter<
       // IMPORTANTE: no sobrescribir el nombre del contacto cuando es un mensaje saliente (fromMe=true)
       let ghlContact: GhlContact | null = null;
       if (isFromAgent) {
-        // Solo buscar; si no existe, crearlo pero preservando el nombre existente si ya había uno
+        // Solo buscar; si no existe, lo creamos preservando el nombre existente
         ghlContact = await this.getGhlContactByPhone(instance.locationId, contactPhone);
         if (!ghlContact) {
           const genericName = `WhatsApp User ${contactPhone.slice(-4)}`;
-          ghlContact = await this.findOrCreateGhlContact(
-            instance.locationId,
+          ghlContact = await this.findOrCreateGhlContactForInstance(
+            instance,
             contactPhone,
             genericName,
-            instance.instanceName,
-            true, // preserveExistingName: no forzar nombre si ya existe
+            true,
           );
         }
       } else {
         const senderName = data.pushName || `WhatsApp User ${contactPhone.slice(-4)}`;
-        ghlContact = await this.findOrCreateGhlContact(
-          instance.locationId,
+        ghlContact = await this.findOrCreateGhlContactForInstance(
+          instance,
           contactPhone,
-        senderName,
-          instance.instanceName,
+          senderName,
           false,
-      );
+        );
       }
 
       const transformedMsg = this.transformer.toPlatformMessage(webhook);

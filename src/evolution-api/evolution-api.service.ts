@@ -255,8 +255,9 @@ export class EvolutionApiService extends BaseAdapter<
       tags: [tag],
       source: 'EvolutionAPI Integration',
     } as GhlContactUpsertRequest;
-    if (!preserveExistingName) {
-      upsertPayload.name = name || `WhatsApp User ${formattedPhone.slice(-4)}`;
+    if (!preserveExistingName && name) {
+      // Solo establecer nombre si viene de Evolution (pushName). No usar fallback "User ####".
+      upsertPayload.name = name;
     }
 
     const { data } = await httpClient.post<GhlContactUpsertResponse>(
@@ -382,6 +383,8 @@ export class EvolutionApiService extends BaseAdapter<
       }
 
       const transformedMsg = this.transformer.toPlatformMessage(webhook);
+      // Asegurar direction consistente: outbound si fromMe, inbound si no
+      transformedMsg.direction = isFromAgent ? 'outbound' : 'inbound';
       transformedMsg.contactId = ghlContact.id;
       transformedMsg.locationId = instance.locationId;
       await this.postInboundMessageToGhl(instance.locationId, transformedMsg);

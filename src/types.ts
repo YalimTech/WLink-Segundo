@@ -145,6 +145,8 @@ export interface GhlPlatformMessage {
   type?: 'WHATSAPP' | 'SMS' | 'EMAIL' | 'INSTAGRAM' | 'MESSENGER' | 'UNKNOWN';
   attachments?: GhlPlatformAttachment[];
   timestamp?: Date;
+  // Opcional: para mensajes outbound, GHL usa userId para pintarlos del lado del agente
+  userId?: string;
 }
 
 export interface GhlContactUpsertRequest {

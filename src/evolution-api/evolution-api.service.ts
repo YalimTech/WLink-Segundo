@@ -441,6 +441,14 @@ export class EvolutionApiService extends BaseAdapter<
       transformedMsg.direction = isFromAgent ? 'outbound' : 'inbound';
       transformedMsg.contactId = ghlContact.id;
       transformedMsg.locationId = instance.locationId;
+      // Para outbound, intenta adjuntar el userId de GHL si está disponible en tokens del usuario
+      if (isFromAgent) {
+        try {
+          const userWithTokens = await this.prisma.getUserWithTokens(instance.locationId);
+          const ghlUserId = (userWithTokens as any)?.ghlUserId || (userWithTokens as any)?.id || userWithTokens?.locationId;
+          if (ghlUserId) (transformedMsg as any).userId = ghlUserId;
+        } catch {}
+      }
       await this.postInboundMessageToGhl(instance.locationId, transformedMsg);
       this.logger.log(`[EvolutionApiService] Message upsert processed for instance '${instanceName}'.`);
     } else {
@@ -636,7 +644,7 @@ export class EvolutionApiService extends BaseAdapter<
         return httpClient.post('/conversations/messages', inboundPayload);
       }
 
-      // Para outbound, incluimos provider/canal
+      // Para outbound, incluimos provider/canal y userId si está disponible
       const outboundPayload: any = {
         locationId,
         contactId: message.contactId,
@@ -650,6 +658,9 @@ export class EvolutionApiService extends BaseAdapter<
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
         ...override,
       };
+      if ((message as any).userId) {
+        outboundPayload.userId = (message as any).userId;
+      }
       outboundPayload.conversationProviderId = conversationProviderId;
       outboundPayload.providerId = conversationProviderId;
       return httpClient.post('/conversations/messages', outboundPayload);

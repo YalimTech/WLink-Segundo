@@ -466,6 +466,32 @@ export class EvolutionApiService extends BaseAdapter<
     this.logger.log(
       `Updating message ${messageId} status to ${status} for location ${locationId}`,
     );
+    const http = await this.getHttpClient(locationId);
+    // Intento 1: endpoint REST estilo v2
+    try {
+      await http.put(`/conversations/messages/${encodeURIComponent(messageId)}/status`, {
+        status,
+        ...meta,
+      });
+      return;
+    } catch (err1) {
+      const s1 = (err1 as AxiosError).response?.status;
+      const d1 = (err1 as AxiosError).response?.data;
+      this.logger.warn(`PUT /conversations/messages/{id}/status failed: ${s1} ${JSON.stringify(d1)}`);
+      // Intento 2: endpoint alternativo por body
+      try {
+        await http.post('/conversations/messages/status', {
+          messageId,
+          status,
+          ...meta,
+        });
+        return;
+      } catch (err2) {
+        const s2 = (err2 as AxiosError).response?.status;
+        const d2 = (err2 as AxiosError).response?.data;
+        this.logger.error(`Failed to update GHL message status: ${s2} ${JSON.stringify(d2)}`);
+      }
+    }
   }
 
   private async postInboundMessageToGhl(

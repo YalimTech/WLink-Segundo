@@ -566,7 +566,7 @@ export class EvolutionApiService extends BaseAdapter<
           type: messageTypeEnv,
           direction: 'inbound',
           status: 'delivered',
-          message: message.message,
+          body: message.message,
           attachments: message.attachments ?? [],
           timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
           conversationProviderId,
@@ -584,7 +584,7 @@ export class EvolutionApiService extends BaseAdapter<
         type: messageTypeEnv,
         direction: 'outbound',
         status: 'sent',
-        message: message.message,
+        body: message.message,
         attachments: message.attachments ?? [],
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
         ...override,
@@ -653,7 +653,7 @@ export class EvolutionApiService extends BaseAdapter<
         } catch {}
         // Intento adicional: eliminar channel/type/provider para la variante mínima
         try {
-          await createMessage({ channel: undefined, type: undefined, conversationProviderId: undefined, providerId: undefined });
+          await createMessage({ channel: undefined, type: undefined, conversationProviderId: undefined, providerId: undefined, body: message.message });
           return;
         } catch {}
       }

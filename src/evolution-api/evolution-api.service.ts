@@ -143,33 +143,24 @@ export class EvolutionApiService extends BaseAdapter<
     phone: string,
   ): Promise<GhlContact | null> {
     const httpClient = await this.getHttpClient(locationId);
+    const formattedPhone = phone?.startsWith('+')
+      ? phone
+      : `+${(phone || '').replace(/[^0-9]/g, '')}`;
     try {
-      const digits = (phone || '').replace(/[^0-9]/g, '');
-      // Intento 1: sin '+'
-      try {
-        const r1 = await httpClient.get(
-          `/contacts/lookup?phone=${encodeURIComponent(digits)}`,
-        );
-        if (r1.data?.contacts?.[0]) return r1.data.contacts[0];
-      } catch {}
-      // Intento 2: con '+'
-      try {
-        const r2 = await httpClient.get(
-          `/contacts/lookup?phone=${encodeURIComponent('+' + digits)}`,
-        );
-        if (r2.data?.contacts?.[0]) return r2.data.contacts[0];
-      } catch {}
-      // Intento 3: búsqueda abierta
-      const r3 = await httpClient.get(
-        `/contacts/search?query=${encodeURIComponent(digits)}`,
+      this.logger.log(`Looking up contact in GHL with phone: ${formattedPhone}`);
+      const response = await httpClient.get(
+        `/contacts/lookup?phone=${encodeURIComponent(formattedPhone)}`,
       );
-      return r3.data?.contacts?.[0] || null;
+      return response.data?.contacts?.[0] || null;
     } catch (error) {
-      if ((error as AxiosError).response?.status === 404) {
+      const axiosError = error as AxiosError;
+      const status = axiosError.response?.status;
+      if (status === 404) {
+        this.logger.warn(`Contact with phone ${formattedPhone} not found in GHL.`);
         return null;
       }
       this.logger.error(
-        `Error fetching contact by phone in GHL: ${(error as AxiosError).message}`,
+        `Error fetching contact by phone in GHL. Status: ${status}, Data: ${JSON.stringify(axiosError.response?.data)}`,
       );
       throw error;
     }

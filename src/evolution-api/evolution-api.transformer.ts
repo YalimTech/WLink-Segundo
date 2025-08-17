@@ -16,10 +16,8 @@ export class EvolutionApiTransformer implements MessageTransformer<GhlPlatformMe
     }
     
     // Determinar dirección: si viene del número de la instancia (fromMe=true) es outbound, si no inbound
-    const rawFromMe: boolean | undefined = webhook.data?.key?.fromMe as any;
-    const statusStr: string = (webhook.data?.status || '').toString().toUpperCase();
-    // Evolution v2 en algunos despliegues no marca fromMe, pero los envíos propios llegan con status 'SERVER_ACK'.
-    const isFromAgent = rawFromMe === true || statusStr === 'SERVER_ACK';
+    // Decidir dirección SOLO por 'fromMe' para evitar falsos positivos por 'status'
+    const isFromAgent = webhook.data?.key?.fromMe === true;
     const platformMessage: Partial<GhlPlatformMessage> = {
       direction: isFromAgent ? 'outbound' : 'inbound',
       message: messageText.trim(),

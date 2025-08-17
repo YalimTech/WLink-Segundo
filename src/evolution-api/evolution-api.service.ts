@@ -158,6 +158,20 @@ export class EvolutionApiService extends BaseAdapter<
       if (status === 404 || status === 400) {
         // Algunos tenants devuelven 400 en lookup no encontrado
         this.logger.warn(`Contact with phone ${formattedPhone} not found in GHL (status ${status}).`);
+        // Fallback: intentar con solo dígitos
+        try {
+          const digits = (phone || '').replace(/[^0-9]/g, '');
+          if (digits) {
+            this.logger.log(`Lookup fallback with digits: ${digits}`);
+            const response2 = await httpClient.get(
+              `/contacts/lookup?phone=${encodeURIComponent(digits)}`,
+            );
+            return response2.data?.contacts?.[0] || null;
+          }
+        } catch (e2) {
+          const s2 = (e2 as AxiosError).response?.status;
+          if (s2 === 404 || s2 === 400) return null;
+        }
         return null;
       }
       this.logger.error(
@@ -228,19 +242,22 @@ export class EvolutionApiService extends BaseAdapter<
     phone: string,
     name: string,
     instanceName: string, // CAMBIO: Parámetro 'instanceId' a 'instanceName'
+    preserveExistingName: boolean = false,
   ): Promise<GhlContact> {
     const httpClient = await this.getHttpClient(locationId);
     const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
     // CAMBIO: Usar 'instanceName' para la etiqueta
     const tag = `whatsapp-instance-${instanceName}`; 
 
-    const upsertPayload: GhlContactUpsertRequest = {
-      name: name || `WhatsApp User ${formattedPhone.slice(-4)}`,
+    const upsertPayload: any = {
       locationId: locationId,
       phone: formattedPhone,
       tags: [tag],
       source: 'EvolutionAPI Integration',
-    };
+    } as GhlContactUpsertRequest;
+    if (!preserveExistingName) {
+      upsertPayload.name = name || `WhatsApp User ${formattedPhone.slice(-4)}`;
+    }
 
     const { data } = await httpClient.post<GhlContactUpsertResponse>(
       '/contacts/upsert',
@@ -341,7 +358,7 @@ export class EvolutionApiService extends BaseAdapter<
       // IMPORTANTE: no sobrescribir el nombre del contacto cuando es un mensaje saliente (fromMe=true)
       let ghlContact: GhlContact | null = null;
       if (isFromAgent) {
-        // Solo buscar; si no existe, lo creamos con nombre genérico del cliente (no el del agente)
+        // Solo buscar; si no existe, crearlo pero preservando el nombre existente si ya había uno
         ghlContact = await this.getGhlContactByPhone(instance.locationId, contactPhone);
         if (!ghlContact) {
           const genericName = `WhatsApp User ${contactPhone.slice(-4)}`;
@@ -350,6 +367,7 @@ export class EvolutionApiService extends BaseAdapter<
             contactPhone,
             genericName,
             instance.instanceName,
+            true, // preserveExistingName: no forzar nombre si ya existe
           );
         }
       } else {
@@ -359,6 +377,7 @@ export class EvolutionApiService extends BaseAdapter<
           contactPhone,
           senderName,
           instance.instanceName,
+          false,
         );
       }
 

@@ -166,6 +166,27 @@ export class EvolutionApiService extends BaseAdapter<
     }
   }
 
+  public async getGhlContactById(
+    locationId: string,
+    contactId: string,
+  ): Promise<GhlContact | null> {
+    const httpClient = await this.getHttpClient(locationId);
+    try {
+      const { data } = await httpClient.get(`/contacts/${contactId}`);
+      return (data?.contact || data) as GhlContact;
+    } catch (error) {
+      const axiosError = error as AxiosError;
+      if (axiosError.response?.status === 404) {
+        this.logger.warn(`Contact ${contactId} not found for location ${locationId}.`);
+        return null;
+      }
+      this.logger.error(
+        `Error fetching contact by id in GHL. Status: ${axiosError.response?.status}, Data: ${JSON.stringify(axiosError.response?.data)}`,
+      );
+      throw error;
+    }
+  }
+
   private async findOrCreateGhlContact(
     locationId: string,
     phone: string,

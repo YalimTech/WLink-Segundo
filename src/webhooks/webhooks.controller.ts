@@ -119,14 +119,25 @@ export class WebhooksController {
 
       // CAMBIO: La variable extraída de los tags será 'instanceName'
       let instanceName: string | null = null; 
-      const contact = await this.evolutionApiService.getGhlContactByPhone(
-        locationId,
-        ghlWebhook.phone,
-      );
+      // Primero usar contactId directo si viene en el webhook
+      let contact: any = null;
+      if (ghlWebhook.contactId) {
+        contact = await this.evolutionApiService.getGhlContactById(
+          locationId,
+          ghlWebhook.contactId,
+        );
+      }
+      // Fallback: buscar por teléfono si no hay contactId válido
+      if (!contact && ghlWebhook.phone) {
+        contact = await this.evolutionApiService.getGhlContactByPhone(
+          locationId,
+          ghlWebhook.phone,
+        );
+      }
 
-      if (contact?.tags) {
+      if (contact && (contact as any).tags) {
         // CAMBIO: Llamar al método renombrado
-        instanceName = this.extractInstanceNameFromTags(contact.tags); 
+        instanceName = this.extractInstanceNameFromTags((contact as any).tags); 
       }
 
       // CAMBIO: Usar 'instanceName'

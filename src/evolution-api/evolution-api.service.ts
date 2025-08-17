@@ -429,8 +429,9 @@ export class EvolutionApiService extends BaseAdapter<
         conversationProviderId,
         providerId: conversationProviderId, // algunas cuentas usan 'providerId'
         channel: 'whatsapp',
-        type: messageType,
+        messageType,
         direction: 'inbound',
+        status: 'delivered',
         message: message.message,
         attachments: message.attachments ?? [],
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
@@ -451,7 +452,7 @@ export class EvolutionApiService extends BaseAdapter<
             conversationProviderId,
             providerId: conversationProviderId,
             channel: 'whatsapp',
-            type: messageType,
+            messageType,
           });
           await createMessage();
           return;
@@ -461,14 +462,10 @@ export class EvolutionApiService extends BaseAdapter<
           );
         }
       }
-      // Fallbacks por validación de enum 'type'
+      // Fallbacks por validación de esquema (algunos tenants no aceptan providerId)
       if (status === 422) {
         try {
-          await createMessage({ type: 'WHATSAPP' });
-          return;
-        } catch {}
-        try {
-          await createMessage({ type: undefined });
+          await createMessage({ providerId: undefined });
           return;
         } catch {}
       }

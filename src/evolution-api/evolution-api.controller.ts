@@ -103,7 +103,7 @@ export class EvolutionApiController {
                     webhook: {
                       url: expectedUrl,
                       headers: { Authorization: `Bearer ${instance.apiTokenInstance}` },
-                      events: ['messages.upsert', 'connection.update'],
+                      events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
                       enabled: true,
                     },
                   },

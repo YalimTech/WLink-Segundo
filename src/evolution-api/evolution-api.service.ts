@@ -369,7 +369,8 @@ export class EvolutionApiService extends BaseAdapter<
               headers: {
                 Authorization: `Bearer ${apiToken}`,
               },
-              events: ['messages.upsert', 'connection.update'],
+              // Evolution API v2 usa eventos en MAYÚSCULAS con guiones bajos
+              events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
               enabled: true,
             },
           } as any;

@@ -420,7 +420,7 @@ export class EvolutionApiService extends BaseAdapter<
     }
 
     const conversationProviderId = this.configService.get<string>('GHL_CONVERSATION_PROVIDER_ID');
-    const messageType = this.configService.get<string>('GHL_MESSAGE_TYPE') || 'SMS';
+    const messageTypeEnv = (this.configService.get<string>('GHL_MESSAGE_TYPE') || 'SMS').toUpperCase();
 
     const createMessage = async (override: Partial<Record<string, any>> = {}) =>
       httpClient.post('/conversations/messages', {
@@ -429,7 +429,7 @@ export class EvolutionApiService extends BaseAdapter<
         conversationProviderId,
         providerId: conversationProviderId, // algunas cuentas usan 'providerId'
         channel: 'whatsapp',
-        messageType,
+        type: messageTypeEnv,
         direction: 'inbound',
         status: 'delivered',
         message: message.message,
@@ -452,7 +452,7 @@ export class EvolutionApiService extends BaseAdapter<
             conversationProviderId,
             providerId: conversationProviderId,
             channel: 'whatsapp',
-            messageType,
+            type: messageTypeEnv,
           });
           await createMessage();
           return;
@@ -462,10 +462,18 @@ export class EvolutionApiService extends BaseAdapter<
           );
         }
       }
-      // Fallbacks por validación de esquema (algunos tenants no aceptan providerId)
+      // Fallbacks por validación de esquema/enum
       if (status === 422) {
         try {
           await createMessage({ providerId: undefined });
+          return;
+        } catch {}
+        try {
+          await createMessage({ type: 'WHATSAPP' });
+          return;
+        } catch {}
+        try {
+          await createMessage({ type: 'SMS' });
           return;
         } catch {}
       }

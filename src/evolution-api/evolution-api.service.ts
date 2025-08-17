@@ -420,6 +420,7 @@ export class EvolutionApiService extends BaseAdapter<
     }
 
     const conversationProviderId = this.configService.get<string>('GHL_CONVERSATION_PROVIDER_ID');
+    const messageType = this.configService.get<string>('GHL_MESSAGE_TYPE') || 'SMS';
 
     const createMessage = async (override: Partial<Record<string, any>> = {}) =>
       httpClient.post('/conversations/messages', {
@@ -428,7 +429,7 @@ export class EvolutionApiService extends BaseAdapter<
         conversationProviderId,
         providerId: conversationProviderId, // algunas cuentas usan 'providerId'
         channel: 'whatsapp',
-        type: 'WHATSAPP',
+        type: messageType,
         direction: 'inbound',
         message: message.message,
         attachments: message.attachments ?? [],
@@ -450,7 +451,7 @@ export class EvolutionApiService extends BaseAdapter<
             conversationProviderId,
             providerId: conversationProviderId,
             channel: 'whatsapp',
-            type: 'WHATSAPP',
+            type: messageType,
           });
           await createMessage();
           return;
@@ -463,7 +464,7 @@ export class EvolutionApiService extends BaseAdapter<
       // Fallbacks por validación de enum 'type'
       if (status === 422) {
         try {
-          await createMessage({ type: 'whatsapp' });
+          await createMessage({ type: 'WHATSAPP' });
           return;
         } catch {}
         try {

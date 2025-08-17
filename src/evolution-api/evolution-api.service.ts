@@ -33,6 +33,13 @@ export class EvolutionApiService extends BaseAdapter<
   private readonly ghlApiBaseUrl = 'https://services.leadconnectorhq.com';
   private readonly ghlApiVersion = '2021-07-28';
 
+  private isValidGhlUserId(possibleId: any, locationId?: string): boolean {
+    if (!possibleId || typeof possibleId !== 'string') return false;
+    if (locationId && possibleId === locationId) return false;
+    // IDs de GHL suelen ser alfanuméricos (>= 15 chars). Evita confundir con locationId.
+    return /^[A-Za-z0-9]{15,}$/.test(possibleId);
+  }
+
   constructor(
     protected readonly evolutionApiTransformer: EvolutionApiTransformer,
     protected readonly prisma: PrismaService,
@@ -445,8 +452,12 @@ export class EvolutionApiService extends BaseAdapter<
       if (isFromAgent) {
         try {
           const userWithTokens = await this.prisma.getUserWithTokens(instance.locationId);
-          const ghlUserId = (userWithTokens as any)?.ghlUserId || (userWithTokens as any)?.id || userWithTokens?.locationId;
-          if (ghlUserId) (transformedMsg as any).userId = ghlUserId;
+          const possible = (userWithTokens as any)?.ghlUserId || (userWithTokens as any)?.id;
+          const defaultUserId = this.configService.get<string>('GHL_DEFAULT_USER_ID');
+          const chosen = this.isValidGhlUserId(possible, instance.locationId)
+            ? possible
+            : (this.isValidGhlUserId(defaultUserId, instance.locationId) ? defaultUserId : undefined);
+          if (chosen) (transformedMsg as any).userId = chosen;
         } catch {}
       }
       await this.postInboundMessageToGhl(instance.locationId, transformedMsg);
@@ -644,7 +655,7 @@ export class EvolutionApiService extends BaseAdapter<
         return httpClient.post('/conversations/messages', inboundPayload);
       }
 
-      // Para outbound, incluimos provider/canal y userId si está disponible
+      // Para outbound, incluimos provider/canal y userId válido si está disponible
       const outboundPayload: any = {
         locationId,
         contactId: message.contactId,
@@ -658,8 +669,10 @@ export class EvolutionApiService extends BaseAdapter<
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
         ...override,
       };
-      if ((message as any).userId) {
-        outboundPayload.userId = (message as any).userId;
+      const defaultUserId = this.configService.get<string>('GHL_DEFAULT_USER_ID');
+      const candidateUserId = (message as any).userId || defaultUserId;
+      if (this.isValidGhlUserId(candidateUserId, locationId)) {
+        outboundPayload.userId = candidateUserId;
       }
       outboundPayload.conversationProviderId = conversationProviderId;
       outboundPayload.providerId = conversationProviderId;

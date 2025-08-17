@@ -334,18 +334,32 @@ export class EvolutionApiService extends BaseAdapter<
       }
 
       const { data } = webhook;
-      const senderPhone = data.key.remoteJid.split('@')[0];
-      const senderName = data.pushName || `WhatsApp User ${senderPhone.slice(-4)}`;
-      const ghlContact = await this.findOrCreateGhlContact(
-        instance.locationId, // CAMBIO: Usar instance.locationId
-        senderPhone,
-        senderName,
-        instance.instanceName, // CAMBIO: Usar instance.instanceName
-      );
+      const contactPhone = data.key.remoteJid.split('@')[0];
+      const isFromAgent = data.key?.fromMe === true;
+
+      // IMPORTANTE: no sobrescribir el nombre del contacto cuando es un mensaje saliente (fromMe=true)
+      let ghlContact: GhlContact | null = null;
+      if (isFromAgent) {
+        // Solo buscar, no crear/actualizar
+        ghlContact = await this.getGhlContactByPhone(instance.locationId, contactPhone);
+        if (!ghlContact) {
+          this.logger.error(`[EvolutionApiService] Outgoing message for a non-existing contact ${contactPhone}. Skipping.`);
+          return;
+        }
+      } else {
+        const senderName = data.pushName || `WhatsApp User ${contactPhone.slice(-4)}`;
+        ghlContact = await this.findOrCreateGhlContact(
+          instance.locationId,
+          contactPhone,
+          senderName,
+          instance.instanceName,
+        );
+      }
+
       const transformedMsg = this.transformer.toPlatformMessage(webhook);
       transformedMsg.contactId = ghlContact.id;
-      transformedMsg.locationId = instance.locationId; // CAMBIO: Usar instance.locationId
-      await this.postInboundMessageToGhl(instance.locationId, transformedMsg); // CAMBIO: Usar instance.locationId
+      transformedMsg.locationId = instance.locationId;
+      await this.postInboundMessageToGhl(instance.locationId, transformedMsg);
       this.logger.log(`[EvolutionApiService] Message upsert processed for instance '${instanceName}'.`);
     } else {
       this.logger.log(`[EvolutionApiService] Evolution Webhook event '${webhook.event}' received for instance '${instanceName}'. No specific handler or missing data. Full Payload: ${JSON.stringify(webhook)}`);

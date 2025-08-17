@@ -556,17 +556,21 @@ export class EvolutionApiService extends BaseAdapter<
     const messageTypeEnv = (this.configService.get<string>('GHL_MESSAGE_TYPE') || 'WHATSAPP').toUpperCase();
 
     const createMessage = async (override: Partial<Record<string, any>> = {}) => {
-      // Para inbound, enviamos payload mínimo para que GHL lo pinte del lado del cliente;
-      // si el tenant exige channel/type, los reintentos lo agregan.
+      // Para inbound, intentamos primero en el canal/proveedor correcto (whatsapp + providerId)
+      // para que la conversación no caiga en SMS. Si diera 422, abajo probamos variantes.
       if ((message.direction || 'inbound') === 'inbound') {
         const inboundPayload: any = {
           locationId,
           contactId: message.contactId,
+          channel: 'whatsapp',
+          type: messageTypeEnv,
           direction: 'inbound',
           status: 'delivered',
           message: message.message,
           attachments: message.attachments ?? [],
           timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
+          conversationProviderId,
+          providerId: conversationProviderId,
           ...override,
         };
         return httpClient.post('/conversations/messages', inboundPayload);
@@ -612,10 +616,9 @@ export class EvolutionApiService extends BaseAdapter<
             channel: 'whatsapp',
             type: messageTypeEnv,
           };
-          if ((message.direction || 'inbound') === 'outbound') {
-            convo.conversationProviderId = conversationProviderId;
-            convo.providerId = conversationProviderId;
-          }
+          // Asegurar que toda conversación use el providerId correcto
+          convo.conversationProviderId = conversationProviderId;
+          convo.providerId = conversationProviderId;
           await httpClient.post('/conversations', convo);
           await createMessage();
           return;
@@ -627,7 +630,7 @@ export class EvolutionApiService extends BaseAdapter<
       }
       // Fallbacks por validación de esquema/enum
       if (status === 422) {
-        // Reintentar agregando type/channel
+        // Reintentar variaciones
         try {
           await createMessage({ type: messageTypeEnv });
           return;

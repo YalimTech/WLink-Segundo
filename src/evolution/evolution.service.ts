@@ -94,16 +94,31 @@ export class EvolutionService {
   // Obtiene la URL de la foto de perfil para un JID remoto (si el despliegue de Evolution lo soporta)
   async getProfilePic(instanceToken: string, instanceName: string, remoteJid: string): Promise<string | null> {
     try {
-      const url = `${this.baseUrl}/chat/profile-pic/${encodeURIComponent(instanceName)}`;
-      const resp = await lastValueFrom(
-        this.http.post(
-          url,
-          { jid: remoteJid },
-          this._getConfig(instanceToken),
-        ),
-      );
-      const picture = (resp as any)?.data?.profilePicUrl || (resp as any)?.data?.url || null;
-      return picture || null;
+      // Intento 1: variante POST con instanceName en ruta
+      const urlPost = `${this.baseUrl}/chat/profile-pic/${encodeURIComponent(instanceName)}`;
+      try {
+        const resp = await lastValueFrom(
+          this.http.post(
+            urlPost,
+            { jid: remoteJid },
+            this._getConfig(instanceToken),
+          ),
+        );
+        const picture1 = (resp as any)?.data?.profilePicUrl || (resp as any)?.data?.url || null;
+        if (picture1) return picture1;
+      } catch {}
+
+      // Intento 2: variante GET directa por JID (algunos despliegues)
+      try {
+        const urlGet = `${this.baseUrl}/chat/profile-pic/${encodeURIComponent(remoteJid)}`;
+        const resp2 = await lastValueFrom(
+          this.http.get(urlGet, this._getConfig(instanceToken)),
+        );
+        const picture2 = (resp2 as any)?.data?.profilePicUrl || (resp2 as any)?.data?.url || null;
+        if (picture2) return picture2;
+      } catch {}
+
+      return null;
     } catch (error) {
       this.logger.warn(`Profile pic not available for ${remoteJid}: ${((error as any)?.response?.status) || ''}`);
       return null;

@@ -574,6 +574,11 @@ export class EvolutionApiService extends BaseAdapter<
       const s1 = (err1 as AxiosError).response?.status;
       const d1 = (err1 as AxiosError).response?.data;
       this.logger.warn(`PUT /conversations/messages/{id}/status failed: ${s1} ${JSON.stringify(d1)}`);
+      // Si el tenant no reconoce al provider, no insistimos más (se requiere habilitar el scope en GHL)
+      if (s1 === 403 && (d1 as any)?.message?.toString?.().includes('No conversation provider')) {
+        this.logger.warn('Skipping status update due to missing conversation provider scope.');
+        return;
+      }
       // Intento 2: endpoint alternativo por body
       try {
         await http.post('/conversations/messages/status', {

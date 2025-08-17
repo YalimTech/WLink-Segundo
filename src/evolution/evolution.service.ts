@@ -253,13 +253,41 @@ export class EvolutionService {
   ) {
     const url = `${this.baseUrl}/webhook/set/${encodeURIComponent(instanceName)}`;
     try {
+      // Intento 1: JSON payload completo (v2)
       const response = await lastValueFrom(
         this.http.post(url, payload, this._getConfig(instanceToken)),
       );
       return response.data;
     } catch (error) {
-      this.logger.error(`Set webhook failed for ${instanceName}: ${error.message}`, error.stack);
-      throw new HttpException('Failed to set webhook on Evolution API.', HttpStatus.INTERNAL_SERVER_ERROR);
+      const status = (error as any)?.response?.status;
+      const data = (error as any)?.response?.data;
+      this.logger.warn(`Set webhook attempt#1 failed for ${instanceName}: ${status} ${JSON.stringify(data)}`);
+
+      // Intento 2: Solo { url }
+      try {
+        const response2 = await lastValueFrom(
+          this.http.post(url, { url: payload?.url }, this._getConfig(instanceToken)),
+        );
+        return response2.data;
+      } catch (err2) {
+        const status2 = (err2 as any)?.response?.status;
+        const data2 = (err2 as any)?.response?.data;
+        this.logger.warn(`Set webhook attempt#2 failed for ${instanceName}: ${status2} ${JSON.stringify(data2)}`);
+
+        // Intento 3: Querystring ?url= (algunos despliegues la usan)
+        try {
+          const qUrl = `${url}?url=${encodeURIComponent(payload?.url)}`;
+          const response3 = await lastValueFrom(
+            this.http.post(qUrl, {}, this._getConfig(instanceToken)),
+          );
+          return response3.data;
+        } catch (err3) {
+          const status3 = (err3 as any)?.response?.status;
+          const data3 = (err3 as any)?.response?.data;
+          this.logger.error(`Set webhook failed for ${instanceName} after 3 attempts: ${status3} ${JSON.stringify(data3)}`);
+          throw new HttpException('Failed to set webhook on Evolution API.', HttpStatus.INTERNAL_SERVER_ERROR);
+        }
+      }
     }
   }
 

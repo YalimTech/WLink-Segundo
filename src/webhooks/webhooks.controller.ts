@@ -32,7 +32,6 @@ export class WebhooksController {
 
   @Post('evolution') // Si Evolution API envía el instanceId en la URL, se necesitaría @Param('instanceId') pathInstanceId: string, aquí.
   @HttpCode(HttpStatus.OK)
-  @UseGuards(DynamicInstanceGuard)
   async handleEvolutionWebhook(
     @Body() payload: EvolutionWebhook,
     @Res() res: Response,
@@ -148,10 +147,7 @@ export class WebhooksController {
         }
       }
 
-      if (
-        ghlWebhook.type === 'SMS' &&
-        (ghlWebhook.message || ghlWebhook.attachments?.length)
-      ) {
+      if (ghlWebhook.message || ghlWebhook.attachments?.length) {
         // CAMBIO: Usar 'instanceName'
         await this.evolutionApiService.handlePlatformWebhook(
           ghlWebhook,

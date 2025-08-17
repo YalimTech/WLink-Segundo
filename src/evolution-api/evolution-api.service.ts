@@ -567,6 +567,7 @@ export class EvolutionApiService extends BaseAdapter<
           direction: 'inbound',
           status: 'delivered',
           body: message.message,
+          message: message.message,
           attachments: message.attachments ?? [],
           timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
           conversationProviderId,
@@ -585,6 +586,7 @@ export class EvolutionApiService extends BaseAdapter<
         direction: 'outbound',
         status: 'sent',
         body: message.message,
+        message: message.message,
         attachments: message.attachments ?? [],
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
         ...override,
@@ -632,28 +634,28 @@ export class EvolutionApiService extends BaseAdapter<
       if (status === 422) {
         // Reintentar variaciones
         try {
-          await createMessage({ type: messageTypeEnv });
+          await createMessage({ type: messageTypeEnv, body: message.message, message: message.message });
           return;
         } catch {}
         try {
-          await createMessage({ channel: 'whatsapp', type: 'WHATSAPP' });
+          await createMessage({ channel: 'whatsapp', type: 'WHATSAPP', body: message.message, message: message.message });
           return;
         } catch {}
         try {
-          await createMessage({ providerId: undefined });
+          await createMessage({ providerId: undefined, body: message.message, message: message.message });
           return;
         } catch {}
         try {
-          await createMessage({ type: 'WHATSAPP' });
+          await createMessage({ type: 'WHATSAPP', body: message.message, message: message.message });
           return;
         } catch {}
         try {
-          await createMessage({ type: 'SMS' });
+          await createMessage({ type: 'SMS', body: message.message, message: message.message });
           return;
         } catch {}
         // Intento adicional: eliminar channel/type/provider para la variante mínima
         try {
-          await createMessage({ channel: undefined, type: undefined, conversationProviderId: undefined, providerId: undefined, body: message.message });
+          await createMessage({ channel: undefined, type: undefined, conversationProviderId: undefined, providerId: undefined, body: message.message, message: message.message });
           return;
         } catch {}
       }

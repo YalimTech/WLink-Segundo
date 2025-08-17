@@ -510,19 +510,24 @@ export class EvolutionApiService extends BaseAdapter<
     }
 
     const conversationProviderId = this.configService.get<string>('GHL_CONVERSATION_PROVIDER_ID');
-    const messageTypeEnv = (this.configService.get<string>('GHL_MESSAGE_TYPE') || 'SMS').toUpperCase();
+    // Por defecto usar WHATSAPP para no caer en SMS si la env no está definida
+    const messageTypeEnv = (this.configService.get<string>('GHL_MESSAGE_TYPE') || 'WHATSAPP').toUpperCase();
 
     const createMessage = async (override: Partial<Record<string, any>> = {}) => {
-      // Para inbound, GHL debe tratarlo como mensaje entrante puro: sin channel/type/provider
+      // Para inbound, enviamos con channel/type y provider; si GHL valida distinto,
+      // los reintentos de abajo probarán variantes sin estos campos.
       if ((message.direction || 'inbound') === 'inbound') {
         const inboundPayload: any = {
           locationId,
           contactId: message.contactId,
+          channel: 'whatsapp',
+          type: messageTypeEnv,
           direction: 'inbound',
           status: 'delivered',
           message: message.message,
           attachments: message.attachments ?? [],
           timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
+          // Importante: NO incluir providerId para inbound; GHL podría tratarlo como saliente
           ...override,
         };
         return httpClient.post('/conversations/messages', inboundPayload);
@@ -547,7 +552,15 @@ export class EvolutionApiService extends BaseAdapter<
     };
 
     try {
-      await createMessage();
+      const resp = await createMessage();
+      // Tras crear el mensaje, forzamos el status explícito para evitar "pending/unsuccessful"
+      try {
+        const createdId = (resp as any)?.data?.message?.id || (resp as any)?.data?.id;
+        if (createdId) {
+          const finalStatus = (message.direction || 'inbound') === 'inbound' ? 'delivered' : 'sent';
+          await this.updateGhlMessageStatus(locationId, createdId, finalStatus);
+        }
+      } catch {}
     } catch (err) {
       const axiosErr = err as AxiosError | any;
       const status = axiosErr?.response?.status;
@@ -585,6 +598,11 @@ export class EvolutionApiService extends BaseAdapter<
         } catch {}
         try {
           await createMessage({ type: 'SMS' });
+          return;
+        } catch {}
+        // Intento adicional: eliminar channel/type/provider para la variante mínima
+        try {
+          await createMessage({ channel: undefined, type: undefined, conversationProviderId: undefined, providerId: undefined });
           return;
         } catch {}
       }

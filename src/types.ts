@@ -153,6 +153,7 @@ export interface GhlContactUpsertRequest {
   phone?: string | null;
   tags?: string[];
   source?: string;
+  avatarUrl?: string | null;
 }
 
 export interface GhlContact {

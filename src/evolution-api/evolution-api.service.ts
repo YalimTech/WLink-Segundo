@@ -148,9 +148,10 @@ export class EvolutionApiService extends BaseAdapter<
       : `+${(phone || '').replace(/[^0-9]/g, '')}`;
     try {
       this.logger.log(`Looking up contact in GHL with phone: ${formattedPhone}`);
-      const response = await httpClient.get(
-        `/contacts/lookup?phone=${encodeURIComponent(formattedPhone)}`,
-      );
+      // Usar params para cumplir con la especificación del endpoint
+      const response = await httpClient.get(`/contacts/lookup`, {
+        params: { phone: formattedPhone },
+      });
       return response.data?.contacts?.[0] || null;
     } catch (error) {
       const axiosError = error as AxiosError;
@@ -163,9 +164,9 @@ export class EvolutionApiService extends BaseAdapter<
           const digits = (phone || '').replace(/[^0-9]/g, '');
           if (digits) {
             this.logger.log(`Lookup fallback with digits: ${digits}`);
-            const response2 = await httpClient.get(
-              `/contacts/lookup?phone=${encodeURIComponent(digits)}`,
-            );
+            const response2 = await httpClient.get(`/contacts/lookup`, {
+              params: { phone: digits },
+            });
             return response2.data?.contacts?.[0] || null;
           }
         } catch (e2) {
@@ -259,6 +260,21 @@ export class EvolutionApiService extends BaseAdapter<
       // Solo establecer nombre si viene de Evolution (pushName). No usar fallback "User ####".
       upsertPayload.name = name;
     }
+    // Intento de enriquecer con avatar si existe en Evolution
+    try {
+      const remoteJid = `${this.normalizeDigits(phone)}@s.whatsapp.net`;
+      const instance = await this.prisma.getInstance(instanceName);
+      if (instance?.apiTokenInstance) {
+        const avatarUrl = await this.evolutionService.getProfilePic(
+          instance.apiTokenInstance,
+          instance.instanceName,
+          remoteJid,
+        );
+        if (avatarUrl) {
+          (upsertPayload as any).avatarUrl = avatarUrl;
+        }
+      }
+    } catch {}
 
     const { data } = await httpClient.post<GhlContactUpsertResponse>(
       '/contacts/upsert',
@@ -376,10 +392,10 @@ export class EvolutionApiService extends BaseAdapter<
         ghlContact = await this.findOrCreateGhlContact(
           instance.locationId,
           contactPhone,
-          senderName,
+        senderName,
           instance.instanceName,
           false,
-        );
+      );
       }
 
       const transformedMsg = this.transformer.toPlatformMessage(webhook);

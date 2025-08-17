@@ -91,6 +91,25 @@ export class EvolutionService {
     }
   }
 
+  // Obtiene la URL de la foto de perfil para un JID remoto (si el despliegue de Evolution lo soporta)
+  async getProfilePic(instanceToken: string, instanceName: string, remoteJid: string): Promise<string | null> {
+    try {
+      const url = `${this.baseUrl}/chat/profile-pic/${encodeURIComponent(instanceName)}`;
+      const resp = await lastValueFrom(
+        this.http.post(
+          url,
+          { jid: remoteJid },
+          this._getConfig(instanceToken),
+        ),
+      );
+      const picture = (resp as any)?.data?.profilePicUrl || (resp as any)?.data?.url || null;
+      return picture || null;
+    } catch (error) {
+      this.logger.warn(`Profile pic not available for ${remoteJid}: ${((error as any)?.response?.status) || ''}`);
+      return null;
+    }
+  }
+
   async getInstanceStatus(instanceToken: string, instanceName: string) { // Ya usa instanceName
     const encodedName = encodeURIComponent(instanceName);
     // Evolution API v2 mantiene el endpoint de estado con esta ruta

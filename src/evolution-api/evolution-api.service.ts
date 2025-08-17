@@ -614,14 +614,20 @@ export class EvolutionApiService extends BaseAdapter<
 
     try {
       const resp = await createMessage();
+      const raw = (resp as any)?.data;
+      this.logger.debug(`[postInboundMessageToGhl] Create response: ${JSON.stringify(raw)}`);
       // Tras crear el mensaje, forzamos el status explícito para evitar "pending/unsuccessful"
       try {
-        const createdId = (resp as any)?.data?.message?.id || (resp as any)?.data?.id;
+        const createdId = raw?.message?.id || raw?.id || raw?.messageId || raw?.data?.id;
         if (createdId) {
           const finalStatus = (message.direction || 'inbound') === 'inbound' ? 'delivered' : 'sent';
           await this.updateGhlMessageStatus(locationId, createdId, finalStatus);
+        } else {
+          this.logger.warn('[postInboundMessageToGhl] Could not extract message id from create response to update status.');
         }
-      } catch {}
+      } catch (e) {
+        this.logger.warn(`[postInboundMessageToGhl] Failed to update status after create: ${(e as any)?.message}`);
+      }
     } catch (err) {
       const axiosErr = err as AxiosError | any;
       const status = axiosErr?.response?.status;

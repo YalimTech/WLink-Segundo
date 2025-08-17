@@ -71,6 +71,7 @@ export class EvolutionService {
 
   async getInstanceStatus(instanceToken: string, instanceName: string) { // Ya usa instanceName
     const encodedName = encodeURIComponent(instanceName);
+    // Evolution API v2 mantiene el endpoint de estado con esta ruta
     const url = `${this.baseUrl}/instance/connectionState/${encodedName}`;
     try {
       const response = await lastValueFrom(

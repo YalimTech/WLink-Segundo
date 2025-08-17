@@ -355,6 +355,29 @@ export class EvolutionApiService extends BaseAdapter<
         settings: {},
       });
       this.logger.log(`[EvolutionApiService] Instance '${evolutionApiInstanceName}' created in DB with initial state: '${mappedState}'.`); // CAMBIO: Logs
+
+      // Evolution API v2: configurar webhook para recibir mensajes y updates de conexión
+      try {
+        const appUrl = this.configService.get<string>('APP_URL');
+        if (!appUrl) {
+          this.logger.warn('[EvolutionApiService] APP_URL not configured; skipping webhook setup.');
+        } else {
+          const webhookUrl = `${appUrl.replace(/\/$/, '')}/webhooks/evolution`;
+          const payload = {
+            // Evolution v2 permite registrar URL y headers; enviamos Authorization Bearer con el token de la instancia
+            url: webhookUrl,
+            headers: {
+              Authorization: `Bearer ${apiToken}`,
+            },
+            events: ['messages.upsert', 'connection.update'],
+            enabled: true,
+          } as any;
+          await this.evolutionService.setWebhook(apiToken, evolutionApiInstanceName, payload);
+          this.logger.log(`[EvolutionApiService] Webhook set for instance '${evolutionApiInstanceName}' -> ${webhookUrl}`);
+        }
+      } catch (whErr: any) {
+        this.logger.error(`[EvolutionApiService] Failed to set webhook for instance '${evolutionApiInstanceName}': ${whErr.message}`);
+      }
       return newInstance;
     } catch (error) {
       this.logger.error(
@@ -386,5 +409,29 @@ export class EvolutionApiService extends BaseAdapter<
     this.logger.log(
       `Posting inbound message to GHL for location ${locationId}: ${message.message}`,
     );
+    // API v2 de GHL: crear mensaje en conversación
+    const httpClient = await this.getHttpClient(locationId);
+
+    // Asegurar campos mínimos
+    if (!message.contactId) {
+      throw new IntegrationError('Missing contactId to post inbound message to GHL');
+    }
+
+    try {
+      await httpClient.post('/conversations/messages', {
+        locationId,
+        contactId: message.contactId,
+        direction: 'inbound',
+        message: message.message,
+        attachments: message.attachments ?? [],
+        timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
+      });
+    } catch (err) {
+      const axiosErr = err as any;
+      this.logger.error(
+        `[EvolutionApiService] Failed to post inbound message to GHL: ${axiosErr?.response?.status} ${JSON.stringify(axiosErr?.response?.data)}`,
+      );
+      throw new IntegrationError('Failed to post inbound message to GHL');
+    }
   }
 }

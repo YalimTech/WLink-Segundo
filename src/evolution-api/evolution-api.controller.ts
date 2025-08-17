@@ -15,6 +15,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { ConfigService } from '@nestjs/config';
 import { EvolutionService } from '../evolution/evolution.service';
 import { EvolutionApiService } from './evolution-api.service';
 import { AuthReq, CreateInstanceDto, UpdateInstanceDto } from '../types'; // Importa UpdateInstanceDto
@@ -28,6 +29,7 @@ export class EvolutionApiController {
     private readonly prisma: PrismaService,
     private readonly evolutionService: EvolutionService,
     private readonly evolutionApiService: EvolutionApiService,
+    private readonly configService: ConfigService,
   ) {}
 
   /**
@@ -49,8 +51,21 @@ export class EvolutionApiController {
             instance.apiTokenInstance,
             instance.instanceName, // CAMBIO: Usar instance.instanceName
           );
-          // La Evolution API puede devolver 'state' o 'status' para el estado
-          const state = status?.state ?? status?.status;
+          // Evolution API v2 devuelve el estado bajo `instance.state` (fallbacks conservados)
+          const rawState =
+            status?.instance?.state ?? status?.state ?? status?.status;
+
+          // Mapea el estado crudo de Evolution v2 a nuestros enums de `InstanceState`
+          const state =
+            rawState === 'open'
+              ? 'authorized'
+              : rawState === 'connecting'
+              ? 'starting'
+              : rawState === 'qrcode'
+              ? 'qr_code'
+              : rawState === 'close'
+              ? 'notAuthorized'
+              : undefined;
 
           this.logger.log(`[getInstances] Estado obtenido para la instancia '${instance.instanceName}' (ID de BD: ${instance.id}): ${state}`); // CAMBIO: Usar instance.instanceName en el log
 
@@ -68,6 +83,34 @@ export class EvolutionApiController {
             } else {
               this.logger.warn(`[getInstances] No se pudo actualizar el estado de la instancia '${instance.instanceName}' en la BD, a pesar de que la API de Evolution devolvió un nuevo estado.`);
             }
+          }
+
+          // Asegurar que el webhook de Evolution v2 esté configurado (idempotente)
+          try {
+            const appUrl = this.configService.get<string>('APP_URL');
+            if (appUrl) {
+              const expectedUrl = `${appUrl.replace(/\/$/, '')}/webhooks/evolution`;
+              const current = await this.evolutionService.findWebhook(
+                instance.apiTokenInstance,
+                instance.instanceName,
+              );
+              const currentUrl: string | undefined = current?.webhook?.url || current?.url;
+              if (!currentUrl || currentUrl !== expectedUrl) {
+                await this.evolutionService.setWebhook(
+                  instance.apiTokenInstance,
+                  instance.instanceName,
+                  {
+                    url: expectedUrl,
+                    headers: { Authorization: `Bearer ${instance.apiTokenInstance}` },
+                    events: ['messages.upsert', 'connection.update'],
+                    enabled: true,
+                  },
+                );
+                this.logger.log(`[getInstances] Webhook ensured for instance '${instance.instanceName}' -> ${expectedUrl}`);
+              }
+            }
+          } catch (whErr: any) {
+            this.logger.warn(`[getInstances] Could not ensure webhook for instance '${instance.instanceName}': ${whErr.message}`);
           }
         } catch (err: any) {
           this.logger.warn(`[getInstances] Error al actualizar el estado de la instancia '${instance.instanceName}' (ID de BD: ${instance.id}): ${err.message}`); // CAMBIO: Usar instance.instanceName en el log

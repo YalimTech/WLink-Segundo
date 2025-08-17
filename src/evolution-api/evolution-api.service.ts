@@ -144,10 +144,26 @@ export class EvolutionApiService extends BaseAdapter<
   ): Promise<GhlContact | null> {
     const httpClient = await this.getHttpClient(locationId);
     try {
-      const response = await httpClient.get(
-        `/contacts/lookup?phone=${encodeURIComponent(phone)}`,
+      const digits = (phone || '').replace(/[^0-9]/g, '');
+      // Intento 1: sin '+'
+      try {
+        const r1 = await httpClient.get(
+          `/contacts/lookup?phone=${encodeURIComponent(digits)}`,
+        );
+        if (r1.data?.contacts?.[0]) return r1.data.contacts[0];
+      } catch {}
+      // Intento 2: con '+'
+      try {
+        const r2 = await httpClient.get(
+          `/contacts/lookup?phone=${encodeURIComponent('+' + digits)}`,
+        );
+        if (r2.data?.contacts?.[0]) return r2.data.contacts[0];
+      } catch {}
+      // Intento 3: búsqueda abierta
+      const r3 = await httpClient.get(
+        `/contacts/search?query=${encodeURIComponent(digits)}`,
       );
-      return response.data?.contacts?.[0] || null;
+      return r3.data?.contacts?.[0] || null;
     } catch (error) {
       if ((error as AxiosError).response?.status === 404) {
         return null;

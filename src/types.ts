@@ -133,6 +133,10 @@ export interface GhlPlatformAttachment {
 export interface MessageStatusPayload {
   status?: 'delivered' | 'read' | 'failed' | 'pending' | 'sent';
   error?: any;
+  // Identificador del Conversation Provider registrado en HighLevel
+  conversationProviderId?: string;
+  // Algunos tenants aceptan también 'providerId' como alias
+  providerId?: string;
 }
 
 export interface GhlPlatformMessage {

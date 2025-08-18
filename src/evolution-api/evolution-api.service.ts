@@ -582,10 +582,18 @@ export class EvolutionApiService extends BaseAdapter<
       `Updating message ${messageId} status to ${status} for location ${locationId}`,
     );
     const http = await this.getHttpClient(locationId);
+    const conversationProviderId = this.configService.get<string>('GHL_CONVERSATION_PROVIDER_ID');
+    if (!conversationProviderId) {
+      this.logger.warn('[updateGhlMessageStatus] GHL_CONVERSATION_PROVIDER_ID not configured. Skipping status update to avoid 403.');
+      return;
+    }
     // Intento 1: endpoint REST estilo v2
     try {
       await http.put(`/conversations/messages/${encodeURIComponent(messageId)}/status`, {
         status,
+        // En muchos tenants es obligatorio informar el provider del mensaje
+        conversationProviderId: meta.conversationProviderId || conversationProviderId,
+        providerId: meta.providerId || conversationProviderId,
         ...meta,
       });
       return;
@@ -603,6 +611,8 @@ export class EvolutionApiService extends BaseAdapter<
         await http.post('/conversations/messages/status', {
           messageId,
           status,
+          conversationProviderId: meta.conversationProviderId || conversationProviderId,
+          providerId: meta.providerId || conversationProviderId,
           ...meta,
         });
         return;
@@ -652,6 +662,10 @@ export class EvolutionApiService extends BaseAdapter<
           providerId: conversationProviderId,
           ...override,
         };
+        // Hardening: evitar valores undefined que rompan validaciones en algunos tenants
+        if (!inboundPayload.channel) delete inboundPayload.channel;
+        if (!inboundPayload.type) delete inboundPayload.type;
+        if (!inboundPayload.providerId) delete inboundPayload.providerId;
         return httpClient.post('/conversations/messages', inboundPayload);
       }
 
@@ -669,13 +683,32 @@ export class EvolutionApiService extends BaseAdapter<
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
         ...override,
       };
-      const defaultUserId = this.configService.get<string>('GHL_DEFAULT_USER_ID');
-      const candidateUserId = (message as any).userId || defaultUserId;
-      if (this.isValidGhlUserId(candidateUserId, locationId)) {
-        outboundPayload.userId = candidateUserId;
-      }
+      // Resolver userId del agente: 1) message.userId, 2) usuario dueño de la location, 3) GHL_DEFAULT_USER_ID
+      try {
+        const provided = (message as any).userId;
+        const defaultUserId = this.configService.get<string>('GHL_DEFAULT_USER_ID');
+        let resolved: string | undefined = undefined;
+        if (this.isValidGhlUserId(provided, locationId)) {
+          resolved = provided;
+        } else {
+          const owner = await this.prisma.getUserWithTokens(locationId);
+          const possible = (owner as any)?.ghlUserId || (owner as any)?.id;
+          if (this.isValidGhlUserId(possible, locationId)) resolved = possible;
+          else if (this.isValidGhlUserId(defaultUserId, locationId)) resolved = defaultUserId;
+        }
+        if (resolved) outboundPayload.userId = resolved;
+        else this.logger.warn(`[postInboundMessageToGhl] No valid userId resolved for outbound message at location ${locationId}. Message will render as contact side.`);
+      } catch {}
       outboundPayload.conversationProviderId = conversationProviderId;
       outboundPayload.providerId = conversationProviderId;
+      // Limpieza de campos undefined
+      if (!outboundPayload.channel) delete outboundPayload.channel;
+      if (!outboundPayload.type) delete outboundPayload.type;
+      if (!outboundPayload.providerId) delete outboundPayload.providerId;
+      // Para outbound, si no hay userId aún, registramos aviso y enviamos igualmente
+      if (!outboundPayload.userId) {
+        this.logger.warn(`[postInboundMessageToGhl] Outbound without userId at location ${locationId}. GHL could render on contact side.`);
+      }
       return httpClient.post('/conversations/messages', outboundPayload);
     };
 
@@ -688,7 +721,10 @@ export class EvolutionApiService extends BaseAdapter<
         const createdId = raw?.message?.id || raw?.id || raw?.messageId || raw?.data?.id;
         if (createdId) {
           const finalStatus = (message.direction || 'inbound') === 'inbound' ? 'delivered' : 'sent';
-          await this.updateGhlMessageStatus(locationId, createdId, finalStatus);
+          await this.updateGhlMessageStatus(locationId, createdId, finalStatus, {
+            conversationProviderId,
+            providerId: conversationProviderId,
+          });
         } else {
           this.logger.warn('[postInboundMessageToGhl] Could not extract message id from create response to update status.');
         }

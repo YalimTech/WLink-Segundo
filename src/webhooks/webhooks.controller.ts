@@ -159,6 +159,8 @@ export class WebhooksController {
       }
 
       if (ghlWebhook.message || ghlWebhook.attachments?.length) {
+        // CAMBIO: Inyectar el userId que vino desde GHL para que el servicio pueda usarlo como fallback
+        (ghlWebhook as any).__ghlUserId = (ghlWebhook as any)?.userId;
         // CAMBIO: Usar 'instanceName'
         await this.evolutionApiService.handlePlatformWebhook(
           ghlWebhook,

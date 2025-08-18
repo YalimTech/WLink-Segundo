@@ -17,6 +17,8 @@ export interface User {
   // CAMBIO: Renombrado de 'id' a 'locationId' para concordancia con GHL
   locationId: string;
   companyId?: string | null;
+  // ID del usuario/agente de GHL para atribución de mensajes outbound
+  ghlUserId?: string | null;
   firstName?: string | null;
   lastName?: string | null;
   email?: string | null;

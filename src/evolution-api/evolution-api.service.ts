@@ -220,6 +220,45 @@ export class EvolutionApiService extends BaseAdapter<
     return (phone || '').replace(/[^0-9]/g, '');
   }
 
+  private async listGhlUsers(locationId: string): Promise<any[]> {
+    const httpClient = await this.getHttpClient(locationId);
+    // Intentos con distintas rutas conocidas según tenantes
+    const attempts: Array<{ url: string; params?: any }> = [
+      { url: '/users', params: { locationId } },
+      { url: `/users/location/${encodeURIComponent(locationId)}` },
+    ];
+    for (const attempt of attempts) {
+      try {
+        const { data } = await httpClient.get(attempt.url, { params: attempt.params });
+        const list = (data?.users || data?.data || data) as any[];
+        if (Array.isArray(list)) return list;
+      } catch {}
+    }
+    return [];
+  }
+
+  private async tryMapAgentUserByPhone(instance: Instance & { user: User }, agentPhoneDigits: string): Promise<string | undefined> {
+    if (!agentPhoneDigits) return undefined;
+    try {
+      const users = await this.listGhlUsers(instance.locationId);
+      for (const u of users) {
+        const phoneDigits = this.normalizeDigits(u?.phone || '');
+        if (phoneDigits && phoneDigits.endsWith(agentPhoneDigits)) {
+          const agentUserId = u?.id as string | undefined;
+          if (this.isValidGhlUserId(agentUserId, instance.locationId)) {
+            const newSettings = { ...(instance.settings || {}), agentUserId, agentPhone: agentPhoneDigits };
+            await this.prisma.updateInstanceSettings(instance.instanceName, newSettings as any);
+            this.logger.log(`[EvolutionApiService] Mapped agent userId '${agentUserId}' by phone '${agentPhoneDigits}' for instance '${instance.instanceName}'.`);
+            return agentUserId;
+          }
+        }
+      }
+    } catch (err: any) {
+      this.logger.warn(`[EvolutionApiService] Could not map agent by phone for instance '${instance.instanceName}': ${err?.message || err}`);
+    }
+    return undefined;
+  }
+
   private async sendWhatsAppMessageWithRetry(
     instanceToken: string,
     instanceName: string,
@@ -404,12 +443,45 @@ export class EvolutionApiService extends BaseAdapter<
       
       if (updated) { 
         this.logger.log(`[EvolutionApiService] Instance '${instanceName}' state updated to '${mappedStatus}' via webhook.`);
+        // Si recibimos wuid (número de WhatsApp del agente) y/o foto, guardarlos y mapear con usuarios de GHL
+        const wuid: string | undefined = (webhook.data as any)?.wuid;
+        const profilePic: string | undefined = (webhook.data as any)?.profilePictureUrl;
+        const digits = wuid ? this.normalizeDigits(wuid) : undefined;
+        let needUpdateSettings = false;
+        const newSettings: any = { ...(updated.settings || {}) };
+        if (digits) {
+          newSettings.agentPhone = digits;
+          needUpdateSettings = true;
+          // Intentar mapear automáticamente el userId del agente por teléfono
+          await this.tryMapAgentUserByPhone(updated as any, digits);
+        }
+        if (profilePic) {
+          newSettings.agentAvatarUrl = profilePic;
+          needUpdateSettings = true;
+        }
+        if (needUpdateSettings) {
+          try {
+            await this.prisma.updateInstanceSettings(instanceName, newSettings);
+          } catch {}
+        }
       } else {
         this.logger.warn(`[EvolutionApiService] Webhook for instance '${instanceName}' received, but could not find/update it in DB. Check instance name.`);
       }
     } else if ((webhook.event === 'messages.upsert' || webhook.event === 'MESSAGES_UPSERT') && webhook.data?.key?.remoteJid) {
-      // Buscar la instancia por su instanceName (que es el 'instance' del webhook)
-      const instance = await this.prisma.getInstance(instanceName);
+      // Intentar identificar la instancia por múltiples claves para evitar perder webhooks
+      let instance = await this.prisma.getInstance(instanceName);
+      if (!instance) {
+        const possibleInstanceId: string | undefined = webhook?.data?.instanceId;
+        if (possibleInstanceId) {
+          try {
+            const byId = await this.prisma.findInstanceById(possibleInstanceId);
+            if (byId) {
+              instance = byId;
+              this.logger.log(`[EvolutionApiService] Resolved instance by instanceId '${possibleInstanceId}' for webhook instance '${instanceName}'.`);
+            }
+          } catch {}
+        }
+      }
       if (!instance) {
         this.logger.warn(`[EvolutionApiService] Webhook 'messages.upsert' for unknown instance '${instanceName}'. Ignoring message.`);
         return;
@@ -448,11 +520,12 @@ export class EvolutionApiService extends BaseAdapter<
       transformedMsg.direction = isFromAgent ? 'outbound' : 'inbound';
       transformedMsg.contactId = ghlContact.id;
       transformedMsg.locationId = instance.locationId;
-      // Para outbound, intenta adjuntar el userId de GHL si está disponible en tokens del usuario
+      // Para outbound, intenta adjuntar el userId del agente priorizando el mapeo por instancia
       if (isFromAgent) {
         try {
+          const mapped = (instance.settings as any)?.agentUserId as string | undefined;
           const userWithTokens = await this.prisma.getUserWithTokens(instance.locationId);
-          const possible = (userWithTokens as any)?.ghlUserId || (userWithTokens as any)?.id;
+          const possible = mapped || (userWithTokens as any)?.ghlUserId || (userWithTokens as any)?.id;
           const defaultUserId = this.configService.get<string>('GHL_DEFAULT_USER_ID');
           const chosen = this.isValidGhlUserId(possible, instance.locationId)
             ? possible
@@ -693,7 +766,10 @@ export class EvolutionApiService extends BaseAdapter<
         } else {
           const owner = await this.prisma.getUserWithTokens(locationId);
           const possible = (owner as any)?.ghlUserId || (owner as any)?.id;
+          // Si el payload del webhook de GHL trae userId, úsalo
+          const fromWebhook = (message as any)?.__ghlUserId as string | undefined;
           if (this.isValidGhlUserId(possible, locationId)) resolved = possible;
+          else if (this.isValidGhlUserId(fromWebhook, locationId)) resolved = fromWebhook;
           else if (this.isValidGhlUserId(defaultUserId, locationId)) resolved = defaultUserId;
         }
         if (resolved) outboundPayload.userId = resolved;

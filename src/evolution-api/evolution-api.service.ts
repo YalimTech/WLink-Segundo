@@ -237,6 +237,28 @@ export class EvolutionApiService extends BaseAdapter<
     return [];
   }
 
+  /**
+   * Busca un usuario (agente) dentro de una location de GHL por número de teléfono.
+   * Normaliza el teléfono a dígitos y hace match por sufijo para tolerar códigos de país.
+   */
+  public async findGhlUserByPhone(locationId: string, phone: string): Promise<any | null> {
+    try {
+      const users = await this.listGhlUsers(locationId);
+      if (!users || users.length === 0) return null;
+      const normalizedPhone = (phone || '').replace(/\D/g, '');
+      if (!normalizedPhone) return null;
+      const found = users.find((u: any) => {
+        const userDigits = (u?.phone || '').replace(/\D/g, '');
+        if (!userDigits) return false;
+        return userDigits.endsWith(normalizedPhone) || normalizedPhone.endsWith(userDigits);
+      });
+      return found || null;
+    } catch (error: any) {
+      this.logger.error('[EvolutionApiService] Error searching GHL user by phone:', error?.response?.data || error?.message);
+      return null;
+    }
+  }
+
   private async tryMapAgentUserByPhone(instance: Instance & { user: User }, agentPhoneDigits: string): Promise<string | undefined> {
     if (!agentPhoneDigits) return undefined;
     try {
@@ -523,14 +545,41 @@ export class EvolutionApiService extends BaseAdapter<
       // Para outbound, intenta adjuntar el userId del agente priorizando el mapeo por instancia
       if (isFromAgent) {
         try {
-          const mapped = (instance.settings as any)?.agentUserId as string | undefined;
-          const userWithTokens = await this.prisma.getUserWithTokens(instance.locationId);
-          const possible = mapped || (userWithTokens as any)?.ghlUserId || (userWithTokens as any)?.id;
-          const defaultUserId = this.configService.get<string>('GHL_DEFAULT_USER_ID');
-          const chosen = this.isValidGhlUserId(possible, instance.locationId)
-            ? possible
-            : (this.isValidGhlUserId(defaultUserId, instance.locationId) ? defaultUserId : undefined);
-          if (chosen) (transformedMsg as any).userId = chosen;
+          // 1) Intentar identificar al agente por el número "sender" del webhook (número de la instancia/agent)
+          const senderJid: string | undefined = (webhook as any)?.sender;
+          let agentDigits = '';
+          if (senderJid) {
+            agentDigits = this.normalizeDigits(senderJid.split('@')[0]);
+          }
+          if (!agentDigits && (instance.settings as any)?.agentPhone) {
+            agentDigits = this.normalizeDigits((instance.settings as any)?.agentPhone);
+          }
+
+          if (agentDigits) {
+            const ghlUser = await this.findGhlUserByPhone(instance.locationId, agentDigits);
+            if (ghlUser?.id && this.isValidGhlUserId(ghlUser.id, instance.locationId)) {
+              (transformedMsg as any).userId = ghlUser.id;
+              // Cachear el mapeo en settings para próximos mensajes
+              try {
+                const newSettings = { ...(instance.settings || {}) } as any;
+                newSettings.agentUserId = ghlUser.id;
+                newSettings.agentPhone = agentDigits;
+                await this.prisma.updateInstanceSettings(instance.instanceName, newSettings);
+              } catch {}
+            }
+          }
+
+          // 2) Fallback: usar mapeo previo o el owner de la location o un default
+          if (!(transformedMsg as any).userId) {
+            const mapped = (instance.settings as any)?.agentUserId as string | undefined;
+            const userWithTokens = await this.prisma.getUserWithTokens(instance.locationId);
+            const possible = mapped || (userWithTokens as any)?.ghlUserId || (userWithTokens as any)?.id;
+            const defaultUserId = this.configService.get<string>('GHL_DEFAULT_USER_ID');
+            const chosen = this.isValidGhlUserId(possible, instance.locationId)
+              ? possible
+              : (this.isValidGhlUserId(defaultUserId, instance.locationId) ? defaultUserId : undefined);
+            if (chosen) (transformedMsg as any).userId = chosen;
+          }
         } catch {}
       }
       await this.postInboundMessageToGhl(instance.locationId, transformedMsg);
@@ -576,7 +625,10 @@ export class EvolutionApiService extends BaseAdapter<
       );
       if (!isValid) {
         this.logger.error(`[EvolutionApiService] Invalid credentials for Evolution API Instance Name: '${evolutionApiInstanceName}'.`); // CAMBIO: Logs
-        throw new Error('Invalid credentials provided for Evolution API Instance Name and Token.'); // CAMBIO: Mensaje
+        throw new HttpException(
+          'Invalid credentials provided for Evolution API Instance Name and Token.',
+          HttpStatus.BAD_REQUEST,
+        );
       }
       this.logger.log(`[EvolutionApiService] Credentials valid for '${evolutionApiInstanceName}'. Fetching initial status...`); // CAMBIO: Logs
 

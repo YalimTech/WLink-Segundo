@@ -761,6 +761,24 @@ export class EvolutionApiService extends BaseAdapter<
     }
   }
 
+  /**
+   * Confirma en GHL que un mensaje fue entregado (delivered).
+   * Wrapper para centralizar el comportamiento solicitado por el equipo de negocio.
+   */
+  public async markMessageAsDelivered(
+    locationId: string,
+    messageId: string,
+  ): Promise<void> {
+    try {
+      await this.updateGhlMessageStatus(locationId, messageId, 'delivered');
+      this.logger.log(`Mensaje ${messageId} marcado como 'delivered' en GHL.`);
+    } catch (error: any) {
+      this.logger.error(
+        `Error al marcar el mensaje ${messageId} como 'delivered': ${error?.message}`,
+      );
+    }
+  }
+
   private async postInboundMessageToGhl(
     locationId: string,
     message: GhlPlatformMessage,
@@ -843,25 +861,28 @@ export class EvolutionApiService extends BaseAdapter<
       return httpClient.post('/conversations/messages', outboundPayload);
     };
 
-    try {
-      const resp = await createMessage();
+    const postAndConfirm = async (
+      override: Partial<Record<string, any>> = {},
+    ) => {
+      const resp = await createMessage(override);
       const raw = (resp as any)?.data;
-      this.logger.debug(`[postInboundMessageToGhl] Create response: ${JSON.stringify(raw)}`);
-      // Tras crear el mensaje, forzamos el status explícito para evitar "pending/unsuccessful"
-      try {
-        const createdId = raw?.message?.id || raw?.id || raw?.messageId || raw?.data?.id;
-        if (createdId) {
-          const finalStatus = (message.direction || 'inbound') === 'inbound' ? 'delivered' : 'sent';
-          await this.updateGhlMessageStatus(locationId, createdId, finalStatus, {
-            conversationProviderId,
-            providerId: conversationProviderId,
-          });
-        } else {
-          this.logger.warn('[postInboundMessageToGhl] Could not extract message id from create response to update status.');
-        }
-      } catch (e) {
-        this.logger.warn(`[postInboundMessageToGhl] Failed to update status after create: ${(e as any)?.message}`);
+      this.logger.debug(
+        `[postInboundMessageToGhl] Create response: ${JSON.stringify(raw)}`,
+      );
+      const createdId =
+        raw?.message?.id || raw?.id || raw?.messageId || raw?.data?.id;
+      if (createdId) {
+        await this.markMessageAsDelivered(locationId, createdId);
+      } else {
+        this.logger.warn(
+          '[postInboundMessageToGhl] Could not extract message id from create response to update status.',
+        );
       }
+      return resp;
+    };
+
+    try {
+      await postAndConfirm();
     } catch (err) {
       const axiosErr = err as AxiosError | any;
       const status = axiosErr?.response?.status;
@@ -878,7 +899,7 @@ export class EvolutionApiService extends BaseAdapter<
           convo.conversationProviderId = conversationProviderId;
           convo.providerId = conversationProviderId;
           await httpClient.post('/conversations', convo);
-          await createMessage();
+          await postAndConfirm();
           return;
         } catch (err2) {
           this.logger.error(
@@ -890,28 +911,28 @@ export class EvolutionApiService extends BaseAdapter<
       if (status === 422) {
         // Reintentar variaciones
         try {
-          await createMessage({ type: messageTypeEnv, body: message.message, message: message.message });
+          await postAndConfirm({ type: messageTypeEnv, body: message.message, message: message.message });
           return;
         } catch {}
         try {
-          await createMessage({ channel: 'whatsapp', type: 'WHATSAPP', body: message.message, message: message.message });
+          await postAndConfirm({ channel: 'whatsapp', type: 'WHATSAPP', body: message.message, message: message.message });
           return;
         } catch {}
         try {
-          await createMessage({ providerId: undefined, body: message.message, message: message.message });
+          await postAndConfirm({ providerId: undefined, body: message.message, message: message.message });
           return;
         } catch {}
         try {
-          await createMessage({ type: 'WHATSAPP', body: message.message, message: message.message });
+          await postAndConfirm({ type: 'WHATSAPP', body: message.message, message: message.message });
           return;
         } catch {}
         try {
-          await createMessage({ type: 'SMS', body: message.message, message: message.message });
+          await postAndConfirm({ type: 'SMS', body: message.message, message: message.message });
           return;
         } catch {}
         // Intento adicional: eliminar channel/type/provider para la variante mínima
         try {
-          await createMessage({ channel: undefined, type: undefined, conversationProviderId: undefined, providerId: undefined, body: message.message, message: message.message });
+          await postAndConfirm({ channel: undefined, type: undefined, conversationProviderId: undefined, providerId: undefined, body: message.message, message: message.message });
           return;
         } catch {}
       }

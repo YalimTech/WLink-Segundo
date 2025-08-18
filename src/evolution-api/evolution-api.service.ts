@@ -224,8 +224,14 @@ export class EvolutionApiService extends BaseAdapter<
     const httpClient = await this.getHttpClient(locationId);
     // Intentos con distintas rutas conocidas según tenantes
     const attempts: Array<{ url: string; params?: any }> = [
+      // 1) Ruta oficial más común
+      { url: `/locations/${encodeURIComponent(locationId)}/users` },
+      { url: `/locations/${encodeURIComponent(locationId)}/users/` },
+      // 2) Variantes observadas en algunos tenants
       { url: '/users', params: { locationId } },
       { url: `/users/location/${encodeURIComponent(locationId)}` },
+      { url: `/users/locations/${encodeURIComponent(locationId)}` },
+      { url: '/users', params: { location: locationId } },
     ];
     for (const attempt of attempts) {
       try {
@@ -237,7 +243,8 @@ export class EvolutionApiService extends BaseAdapter<
         }
       } catch (err: any) {
         const status = err?.response?.status;
-        this.logger.debug(`[listGhlUsers] Attempt ${attempt.url} failed with status ${status}.`);
+        const msg = err?.response?.data ? JSON.stringify(err.response.data) : (err?.message || 'unknown');
+        this.logger.debug(`[listGhlUsers] Attempt ${attempt.url} failed with status ${status}. Data: ${msg}`);
       }
     }
     return [];

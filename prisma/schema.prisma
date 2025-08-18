@@ -15,6 +15,8 @@ model User {
   // CAMBIO: Renombrado de 'id' a 'locationId' para concordancia con GHL
   locationId   String    @id @unique @map("locationId") // GoHighLevel Location ID
   companyId    String?
+  /// ID del usuario (agente) de HighLevel que instaló/autoriza la app. Se usa para atribuir mensajes outbound.
+  ghlUserId    String?   @db.Text
   firstName    String?   // Campo para el nombre del usuario de GHL
   lastName     String?   // Campo para el apellido del usuario de GHL
   email        String?   // Campo para el email del usuario de GHL

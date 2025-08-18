@@ -547,6 +547,16 @@ export class EvolutionApiService extends BaseAdapter<
           senderName,
           false,
         );
+        // --- INICIO DEL NUEVO BLOQUE ---
+        try {
+          const profilePictureUrl: string | undefined = (webhook.data as any)?.profilePictureUrl;
+          if (profilePictureUrl) {
+            await this.updateGhlContactProfile(ghlContact as any, instance.locationId, senderName, profilePictureUrl);
+          }
+        } catch (err) {
+          this.logger.debug(`[EvolutionApiService] Could not update GHL contact profile for ${ghlContact?.id}: ${ (err as any)?.message || err }`);
+        }
+        // --- FIN DEL NUEVO BLOQUE ---
       }
 
       const transformedMsg = this.transformer.toPlatformMessage(webhook);
@@ -778,29 +788,37 @@ export class EvolutionApiService extends BaseAdapter<
       const payload: any = {
         ...message,
         locationId,
-        // asegurar compatibilidad con ambos nombres de campo
         body: (message as any).body ?? message.message,
-        // clave: estado inbox para que GHL lo procese correctamente
-        status: 'inbox',
+        // Estado correcto para crear conversación y evitar "Unsuccessful"
+        status: 'unread',
       };
       if (payload.timestamp) {
         payload.timestamp = new Date(payload.timestamp).toISOString();
       }
       const response = await httpClient.post(
-        '/conversations/messages/inbound',
+        '/conversations/messages',
         payload,
       );
-      const rid =
-        (response.data?.messageId || response.data?.id || response.data?.message?.id);
-      this.logger.log(
-        `Mensaje enviado exitosamente a GHL con estado 'inbox'. MessageId: ${rid ?? 'unknown'}`,
-      );
+      const rid = (response.data?.message?.id || response.data?.id || response.data?.messageId);
+      this.logger.log(`Mensaje enviado exitosamente a GHL. MessageId: ${rid ?? 'unknown'}`);
     } catch (err) {
       const axiosErr = err as AxiosError | any;
       this.logger.error(
-        `[EvolutionApiService] Failed to post message to GHL via /messages/inbound: ${axiosErr?.response?.status || ''} ${JSON.stringify(axiosErr?.response?.data || axiosErr?.message)}`,
+        `[EvolutionApiService] Failed to post message to GHL via /conversations/messages: ${axiosErr?.response?.status || ''} ${JSON.stringify(axiosErr?.response?.data || axiosErr?.message)}`,
       );
-      throw new IntegrationError('Failed to post inbound message to GHL');
+      throw new IntegrationError('Failed to post message to GHL.');
+    }
+  }
+
+  // --- NUEVO: Sincronizar nombre y foto de perfil del contacto en GHL ---
+  public async updateGhlContactProfile(contact: any, locationId: string, pushName: string, profilePictureUrl: string): Promise<void> {
+    try {
+      if (!contact?.id) return;
+      const http = await this.getHttpClient(locationId);
+      await http.put(`/contacts/${contact.id}`, { firstName: pushName, profilePictureUrl });
+      this.logger.log(`Perfil del contacto ${contact.id} actualizado.`);
+    } catch (error: any) {
+      this.logger.error(`Error al actualizar el perfil del contacto ${contact?.id}:`, error?.response?.data || error?.message);
     }
   }
 }

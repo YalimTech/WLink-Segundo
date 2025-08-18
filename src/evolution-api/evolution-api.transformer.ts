@@ -25,6 +25,7 @@ export class EvolutionApiTransformer implements MessageTransformer<GhlPlatformMe
       return isNaN(n) ? new Date() : new Date(n * 1000);
     })();
     const platformMessage: Partial<GhlPlatformMessage> = {
+      type: 'SMS',
       direction: isFromAgent ? 'outbound' : 'inbound',
       message: messageText.trim(),
       timestamp: ts,

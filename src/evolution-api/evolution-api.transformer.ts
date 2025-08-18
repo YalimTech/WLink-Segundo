@@ -18,10 +18,16 @@ export class EvolutionApiTransformer implements MessageTransformer<GhlPlatformMe
     // Determinar dirección: si viene del número de la instancia (fromMe=true) es outbound, si no inbound
     // Decidir dirección SOLO por 'fromMe' para evitar falsos positivos por 'status'
     const isFromAgent = webhook.data?.key?.fromMe === true;
+    const ts = ((): Date => {
+      const raw = (webhook as any)?.data?.messageTimestamp || (webhook as any)?.timestamp;
+      if (!raw) return new Date();
+      const n = Number(raw);
+      return isNaN(n) ? new Date() : new Date(n * 1000);
+    })();
     const platformMessage: Partial<GhlPlatformMessage> = {
       direction: isFromAgent ? 'outbound' : 'inbound',
       message: messageText.trim(),
-      timestamp: webhook.timestamp ? new Date(Number(webhook.timestamp) * 1000) : new Date(),
+      timestamp: ts,
     };
 
     return platformMessage as GhlPlatformMessage;

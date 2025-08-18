@@ -231,8 +231,14 @@ export class EvolutionApiService extends BaseAdapter<
       try {
         const { data } = await httpClient.get(attempt.url, { params: attempt.params });
         const list = (data?.users || data?.data || data) as any[];
-        if (Array.isArray(list)) return list;
-      } catch {}
+        if (Array.isArray(list)) {
+          this.logger.debug(`[listGhlUsers] Got ${list.length} users from ${attempt.url}`);
+          return list;
+        }
+      } catch (err: any) {
+        const status = err?.response?.status;
+        this.logger.debug(`[listGhlUsers] Attempt ${attempt.url} failed with status ${status}.`);
+      }
     }
     return [];
   }
@@ -252,6 +258,11 @@ export class EvolutionApiService extends BaseAdapter<
         if (!userDigits) return false;
         return userDigits.endsWith(normalizedPhone) || normalizedPhone.endsWith(userDigits);
       });
+      if (found?.id) {
+        this.logger.log(`[EvolutionApiService] Found GHL user by phone. phone=${normalizedPhone}, userId=${found.id}, name=${found.firstName || ''} ${found.lastName || ''}`);
+      } else {
+        this.logger.warn(`[EvolutionApiService] No matching GHL user found by phone ${normalizedPhone} in location ${locationId}.`);
+      }
       return found || null;
     } catch (error: any) {
       this.logger.error('[EvolutionApiService] Error searching GHL user by phone:', error?.response?.data || error?.message);
@@ -559,6 +570,7 @@ export class EvolutionApiService extends BaseAdapter<
             const ghlUser = await this.findGhlUserByPhone(instance.locationId, agentDigits);
             if (ghlUser?.id && this.isValidGhlUserId(ghlUser.id, instance.locationId)) {
               (transformedMsg as any).userId = ghlUser.id;
+              this.logger.log(`[EvolutionApiService] Outbound message attributed to agent ${ghlUser.firstName || ''} ${ghlUser.lastName || ''} (ID: ${ghlUser.id}).`);
               // Cachear el mapeo en settings para próximos mensajes
               try {
                 const newSettings = { ...(instance.settings || {}) } as any;
@@ -569,16 +581,15 @@ export class EvolutionApiService extends BaseAdapter<
             }
           }
 
-          // 2) Fallback: usar mapeo previo o el owner de la location o un default
+          // 2) Fallback limitado: si ya hay un mapeo explícito previo, úsalo. Evitar defaults globales.
           if (!(transformedMsg as any).userId) {
             const mapped = (instance.settings as any)?.agentUserId as string | undefined;
-            const userWithTokens = await this.prisma.getUserWithTokens(instance.locationId);
-            const possible = mapped || (userWithTokens as any)?.ghlUserId || (userWithTokens as any)?.id;
-            const defaultUserId = this.configService.get<string>('GHL_DEFAULT_USER_ID');
-            const chosen = this.isValidGhlUserId(possible, instance.locationId)
-              ? possible
-              : (this.isValidGhlUserId(defaultUserId, instance.locationId) ? defaultUserId : undefined);
-            if (chosen) (transformedMsg as any).userId = chosen;
+            if (this.isValidGhlUserId(mapped, instance.locationId)) {
+              (transformedMsg as any).userId = mapped;
+              this.logger.log(`[EvolutionApiService] Using previously mapped agentUserId from settings for instance '${instance.instanceName}'.`);
+            } else {
+              this.logger.warn('[EvolutionApiService] Could not resolve agent userId for outbound message; sending without user attribution.');
+            }
           }
         } catch {}
       }
@@ -808,24 +819,15 @@ export class EvolutionApiService extends BaseAdapter<
         timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
         ...override,
       };
-      // Resolver userId del agente: 1) message.userId, 2) usuario dueño de la location, 3) GHL_DEFAULT_USER_ID
+      // Resolver userId del agente: solo si fue provisto previamente (p. ej., mapeo por teléfono)
       try {
         const provided = (message as any).userId;
-        const defaultUserId = this.configService.get<string>('GHL_DEFAULT_USER_ID');
-        let resolved: string | undefined = undefined;
         if (this.isValidGhlUserId(provided, locationId)) {
-          resolved = provided;
+          outboundPayload.userId = provided;
         } else {
-          const owner = await this.prisma.getUserWithTokens(locationId);
-          const possible = (owner as any)?.ghlUserId || (owner as any)?.id;
-          // Si el payload del webhook de GHL trae userId, úsalo
-          const fromWebhook = (message as any)?.__ghlUserId as string | undefined;
-          if (this.isValidGhlUserId(possible, locationId)) resolved = possible;
-          else if (this.isValidGhlUserId(fromWebhook, locationId)) resolved = fromWebhook;
-          else if (this.isValidGhlUserId(defaultUserId, locationId)) resolved = defaultUserId;
+          // No forzar atribución con dueños o defaults; si no hay coincidencia real, enviar sin userId
+          this.logger.warn(`[postInboundMessageToGhl] No userId provided for outbound at location ${locationId}. Skipping attribution.`);
         }
-        if (resolved) outboundPayload.userId = resolved;
-        else this.logger.warn(`[postInboundMessageToGhl] No valid userId resolved for outbound message at location ${locationId}. Message will render as contact side.`);
       } catch {}
       outboundPayload.conversationProviderId = conversationProviderId;
       outboundPayload.providerId = conversationProviderId;

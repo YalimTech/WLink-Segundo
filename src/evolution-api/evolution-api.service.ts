@@ -222,16 +222,10 @@ export class EvolutionApiService extends BaseAdapter<
 
   private async listGhlUsers(locationId: string): Promise<any[]> {
     const httpClient = await this.getHttpClient(locationId);
-    // Intentos con distintas rutas conocidas según tenantes
+    // Según la documentación oficial v2, la ruta correcta para listar usuarios por location es /users/ con query param locationId
     const attempts: Array<{ url: string; params?: any }> = [
-      // 1) Ruta oficial más común
-      { url: `/locations/${encodeURIComponent(locationId)}/users` },
-      { url: `/locations/${encodeURIComponent(locationId)}/users/` },
-      // 2) Variantes observadas en algunos tenants
-      { url: '/users', params: { locationId } },
-      { url: `/users/location/${encodeURIComponent(locationId)}` },
-      { url: `/users/locations/${encodeURIComponent(locationId)}` },
-      { url: '/users', params: { location: locationId } },
+      { url: '/users/', params: { locationId } },
+      { url: '/users', params: { locationId } }, // fallback sin la barra final
     ];
     for (const attempt of attempts) {
       try {

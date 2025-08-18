@@ -761,24 +761,6 @@ export class EvolutionApiService extends BaseAdapter<
     }
   }
 
-  /**
-   * Confirma en GHL que un mensaje fue entregado (delivered).
-   * Wrapper para centralizar el comportamiento solicitado por el equipo de negocio.
-   */
-  public async markMessageAsDelivered(
-    locationId: string,
-    messageId: string,
-  ): Promise<void> {
-    try {
-      await this.updateGhlMessageStatus(locationId, messageId, 'delivered');
-      this.logger.log(`Mensaje ${messageId} marcado como 'delivered' en GHL.`);
-    } catch (error: any) {
-      this.logger.error(
-        `Error al marcar el mensaje ${messageId} como 'delivered': ${error?.message}`,
-      );
-    }
-  }
-
   private async postInboundMessageToGhl(
     locationId: string,
     message: GhlPlatformMessage,
@@ -786,158 +768,37 @@ export class EvolutionApiService extends BaseAdapter<
     this.logger.log(
       `Posting message to GHL for location ${locationId} (direction=${message.direction}): ${message.message}`,
     );
-    // API v2 de GHL: crear mensaje en conversación
     const httpClient = await this.getHttpClient(locationId);
 
-    // Asegurar campos mínimos
     if (!message.contactId) {
       throw new IntegrationError('Missing contactId to post inbound message to GHL');
     }
 
-    const conversationProviderId = this.configService.get<string>('GHL_CONVERSATION_PROVIDER_ID');
-    // Por defecto usar WHATSAPP para no caer en SMS si la env no está definida
-    const messageTypeEnv = (this.configService.get<string>('GHL_MESSAGE_TYPE') || 'WHATSAPP').toUpperCase();
-
-    const createMessage = async (override: Partial<Record<string, any>> = {}) => {
-      // Para inbound, intentamos primero en el canal/proveedor correcto (whatsapp + providerId)
-      // para que la conversación no caiga en SMS. Si diera 422, abajo probamos variantes.
-      if ((message.direction || 'inbound') === 'inbound') {
-        const inboundPayload: any = {
-          locationId,
-          contactId: message.contactId,
-          channel: 'whatsapp',
-          type: messageTypeEnv,
-          direction: 'inbound',
-          status: 'delivered',
-          body: message.message,
-          message: message.message,
-          attachments: message.attachments ?? [],
-          timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
-          conversationProviderId,
-          providerId: conversationProviderId,
-          ...override,
-        };
-        // Hardening: evitar valores undefined que rompan validaciones en algunos tenants
-        if (!inboundPayload.channel) delete inboundPayload.channel;
-        if (!inboundPayload.type) delete inboundPayload.type;
-        if (!inboundPayload.providerId) delete inboundPayload.providerId;
-        return httpClient.post('/conversations/messages', inboundPayload);
-      }
-
-      // Para outbound, incluimos provider/canal y userId válido si está disponible
-      const outboundPayload: any = {
-        locationId,
-        contactId: message.contactId,
-        channel: 'whatsapp',
-        type: messageTypeEnv,
-        direction: 'outbound',
-        status: 'sent',
-        body: message.message,
-        message: message.message,
-        attachments: message.attachments ?? [],
-        timestamp: message.timestamp ? new Date(message.timestamp).toISOString() : undefined,
-        ...override,
-      };
-      // Resolver userId del agente: solo si fue provisto previamente (p. ej., mapeo por teléfono)
-      try {
-        const provided = (message as any).userId;
-        if (this.isValidGhlUserId(provided, locationId)) {
-          outboundPayload.userId = provided;
-        } else {
-          // No forzar atribución con dueños o defaults; si no hay coincidencia real, enviar sin userId
-          this.logger.warn(`[postInboundMessageToGhl] No userId provided for outbound at location ${locationId}. Skipping attribution.`);
-        }
-      } catch {}
-      outboundPayload.conversationProviderId = conversationProviderId;
-      outboundPayload.providerId = conversationProviderId;
-      // Limpieza de campos undefined
-      if (!outboundPayload.channel) delete outboundPayload.channel;
-      if (!outboundPayload.type) delete outboundPayload.type;
-      if (!outboundPayload.providerId) delete outboundPayload.providerId;
-      // Para outbound, si no hay userId aún, registramos aviso y enviamos igualmente
-      if (!outboundPayload.userId) {
-        this.logger.warn(`[postInboundMessageToGhl] Outbound without userId at location ${locationId}. GHL could render on contact side.`);
-      }
-      return httpClient.post('/conversations/messages', outboundPayload);
-    };
-
-    const postAndConfirm = async (
-      override: Partial<Record<string, any>> = {},
-    ) => {
-      const resp = await createMessage(override);
-      const raw = (resp as any)?.data;
-      this.logger.debug(
-        `[postInboundMessageToGhl] Create response: ${JSON.stringify(raw)}`,
-      );
-      const createdId =
-        raw?.message?.id || raw?.id || raw?.messageId || raw?.data?.id;
-      if (createdId) {
-        await this.markMessageAsDelivered(locationId, createdId);
-      } else {
-        this.logger.warn(
-          '[postInboundMessageToGhl] Could not extract message id from create response to update status.',
-        );
-      }
-      return resp;
-    };
-
     try {
-      await postAndConfirm();
+      const payload: any = {
+        ...message,
+        locationId,
+        // asegurar compatibilidad con ambos nombres de campo
+        body: (message as any).body ?? message.message,
+        // clave: estado inbox para que GHL lo procese correctamente
+        status: 'inbox',
+      };
+      if (payload.timestamp) {
+        payload.timestamp = new Date(payload.timestamp).toISOString();
+      }
+      const response = await httpClient.post(
+        '/conversations/messages/inbound',
+        payload,
+      );
+      const rid =
+        (response.data?.messageId || response.data?.id || response.data?.message?.id);
+      this.logger.log(
+        `Mensaje enviado exitosamente a GHL con estado 'inbox'. MessageId: ${rid ?? 'unknown'}`,
+      );
     } catch (err) {
       const axiosErr = err as AxiosError | any;
-      const status = axiosErr?.response?.status;
-      // Si GHL exige una conversación previa, la creamos y reintentamos
-      if (status === 404 || status === 400) {
-        try {
-          const convo: any = {
-            locationId,
-            contactId: message.contactId,
-            channel: 'whatsapp',
-            type: messageTypeEnv,
-          };
-          // Asegurar que toda conversación use el providerId correcto
-          convo.conversationProviderId = conversationProviderId;
-          convo.providerId = conversationProviderId;
-          await httpClient.post('/conversations', convo);
-          await postAndConfirm();
-          return;
-        } catch (err2) {
-          this.logger.error(
-            `[EvolutionApiService] Failed to create conversation before posting message: ${JSON.stringify((err2 as any)?.response?.data)}`,
-          );
-        }
-      }
-      // Fallbacks por validación de esquema/enum
-      if (status === 422) {
-        // Reintentar variaciones
-        try {
-          await postAndConfirm({ type: messageTypeEnv, body: message.message, message: message.message });
-          return;
-        } catch {}
-        try {
-          await postAndConfirm({ channel: 'whatsapp', type: 'WHATSAPP', body: message.message, message: message.message });
-          return;
-        } catch {}
-        try {
-          await postAndConfirm({ providerId: undefined, body: message.message, message: message.message });
-          return;
-        } catch {}
-        try {
-          await postAndConfirm({ type: 'WHATSAPP', body: message.message, message: message.message });
-          return;
-        } catch {}
-        try {
-          await postAndConfirm({ type: 'SMS', body: message.message, message: message.message });
-          return;
-        } catch {}
-        // Intento adicional: eliminar channel/type/provider para la variante mínima
-        try {
-          await postAndConfirm({ channel: undefined, type: undefined, conversationProviderId: undefined, providerId: undefined, body: message.message, message: message.message });
-          return;
-        } catch {}
-      }
       this.logger.error(
-        `[EvolutionApiService] Failed to post inbound message to GHL: ${status} ${JSON.stringify(axiosErr?.response?.data)}`,
+        `[EvolutionApiService] Failed to post message to GHL via /messages/inbound: ${axiosErr?.response?.status || ''} ${JSON.stringify(axiosErr?.response?.data || axiosErr?.message)}`,
       );
       throw new IntegrationError('Failed to post inbound message to GHL');
     }

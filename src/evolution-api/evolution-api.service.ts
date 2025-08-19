@@ -157,7 +157,7 @@ export class EvolutionApiService extends BaseAdapter<
       this.logger.log(`Looking up contact in GHL with phone: ${formattedPhone}`);
       // Usar params para cumplir con la especificación del endpoint
       const response = await httpClient.get(`/contacts/lookup`, {
-        params: { phone: formattedPhone },
+        params: { phone: formattedPhone, locationId },
       });
       return response.data?.contacts?.[0] || null;
     } catch (error) {
@@ -172,13 +172,36 @@ export class EvolutionApiService extends BaseAdapter<
           if (digits) {
             this.logger.log(`Lookup fallback with digits: ${digits}`);
             const response2 = await httpClient.get(`/contacts/lookup`, {
-              params: { phone: digits },
+              params: { phone: digits, locationId },
             });
             return response2.data?.contacts?.[0] || null;
           }
         } catch (e2) {
           const s2 = (e2 as AxiosError).response?.status;
           if (s2 === 404 || s2 === 400) return null;
+        }
+
+        // Fallback v2: usar /contacts/search con locationId y query por dígitos
+        try {
+          const digits = (phone || '').replace(/[^0-9]/g, '');
+          if (digits) {
+            const { data } = await httpClient.get(`/contacts/search`, {
+              params: { locationId, query: digits },
+            });
+            const list: any[] = (data?.contacts || data?.data || data) as any[];
+            if (Array.isArray(list) && list.length) {
+              const match = list.find((c: any) => {
+                const p = (c?.phone || c?.phoneNumber || '').toString();
+                const d = p.replace(/\D/g, '');
+                return d.endsWith(digits) || digits.endsWith(d);
+              });
+              if (match) return match as GhlContact;
+            }
+          }
+        } catch (e3) {
+          const s3 = (e3 as AxiosError).response?.status;
+          const d3 = (e3 as AxiosError).response?.data;
+          this.logger.debug(`GET /contacts/search fallback failed: ${s3} ${JSON.stringify(d3)}`);
         }
         return null;
       }
@@ -264,19 +287,26 @@ export class EvolutionApiService extends BaseAdapter<
     userId?: string,
   ): Promise<void> {
     const http = await this.getHttpClient(locationId);
+    const conversationProviderId = this.configService.get<string>('GHL_CONVERSATION_PROVIDER_ID');
     const payload: any = {
-      type: 'SMS',
+      type: 'WHATSAPP',
+      locationId,
       conversationId,
       contactId,
       body,
+      message: body,
       direction,
     };
     if (userId && direction === 'outbound') payload.userId = userId;
+    if (conversationProviderId) {
+      payload.conversationProviderId = conversationProviderId;
+      payload.providerId = conversationProviderId;
+    }
     try {
-      await http.post('/conversations/messages/inbound', payload);
+      await http.post('/conversations/messages', payload);
       this.logger.log(`Mensaje enviado exitosamente a la conversación ${conversationId}`);
     } catch (error: any) {
-      this.logger.error('Error enviando mensaje a GHL /inbound:', error?.response?.data || error?.message);
+      this.logger.error('Error enviando mensaje a GHL /conversations/messages:', error?.response?.data || error?.message);
       throw new IntegrationError('Failed to post inbound message to GHL.');
     }
   }

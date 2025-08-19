@@ -7,7 +7,7 @@ import {
   NotFoundError,
   IntegrationError,
 } from '../core/base-adapter';
-import { EvolutionApiTransformer } from './evolution-api.transformer';
+import { EvolutionApiTransformer, getMessageBody } from './evolution-api.transformer';
 import { PrismaService, parseId } from '../prisma/prisma.service';
 import { EvolutionService } from '../evolution/evolution.service';
 import { GhlWebhookDto } from './dto/ghl-webhook.dto';
@@ -219,7 +219,8 @@ export class EvolutionApiService extends BaseAdapter<
   ): Promise<any | null> {
     const http = await this.getHttpClient(locationId);
     // Intentos de búsqueda (diferentes rutas usadas según tenant)
-    const searchAttempts: Array<{ url: string; params?: any }> = [
+    const searchAttempts: Array<{ url: string; params?: any; absolute?: boolean }> = [
+      { url: `/contacts/${encodeURIComponent(contactId)}/conversations`, absolute: true },
       { url: '/conversations/search', params: { locationId, contactId } },
       { url: '/conversations', params: { locationId, contactId } },
       { url: '/conversations/', params: { locationId, contactId } },
@@ -634,9 +635,8 @@ export class EvolutionApiService extends BaseAdapter<
         // --- FIN DEL NUEVO BLOQUE ---
       }
 
-      const transformedMsg = this.transformer.toPlatformMessage(webhook);
       const direction: 'inbound' | 'outbound' = isFromAgent ? 'outbound' : 'inbound';
-      const messageBody = (transformedMsg as any).body ?? transformedMsg.message ?? '';
+      const messageBody = getMessageBody((webhook as any)?.data?.message);
 
       // Resolver conversationId antes de enviar
       const conversation = await this.findOrCreateGhlConversation(instance.locationId, ghlContact.id);

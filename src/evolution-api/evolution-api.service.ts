@@ -218,39 +218,34 @@ export class EvolutionApiService extends BaseAdapter<
     contactId: string,
   ): Promise<any | null> {
     const http = await this.getHttpClient(locationId);
-    // Intentos de búsqueda (diferentes rutas usadas según tenant)
-    const searchAttempts: Array<{ url: string; params?: any; absolute?: boolean }> = [
-      { url: `/contacts/${encodeURIComponent(contactId)}/conversations`, absolute: true },
-      { url: '/conversations/search', params: { locationId, contactId } },
-      { url: '/conversations', params: { locationId, contactId } },
-      { url: '/conversations/', params: { locationId, contactId } },
-    ];
-    for (const attempt of searchAttempts) {
-      try {
-        const { data } = await http.get(attempt.url, { params: attempt.params });
-        const list: any[] = (data?.conversations || data?.data || data);
-        if (Array.isArray(list) && list.length > 0) {
-          return list[0];
-        }
-      } catch (err: any) {
-        const status = err?.response?.status;
-        const msg = err?.response?.data ? JSON.stringify(err.response.data) : err?.message;
-        this.logger.debug(`[findOrCreateGhlConversation] GET ${attempt.url} failed: ${status} ${msg}`);
+
+    // 1) Buscar conversación usando el endpoint correcto '/conversations/search'
+    try {
+      const { data } = await http.get('/conversations/search', {
+        params: { locationId, contactId },
+      });
+      const list: any[] = (data?.conversations || data?.data || data) as any[];
+      if (Array.isArray(list) && list.length > 0) {
+        this.logger.log(`Conversación encontrada para el contacto ${contactId}`);
+        return list[0];
       }
+    } catch (err: any) {
+      const status = err?.response?.status;
+      const msg = err?.response?.data ? JSON.stringify(err.response.data) : err?.message;
+      this.logger.debug(`[findOrCreateGhlConversation] GET /conversations/search failed: ${status} ${msg}`);
     }
+
     // 2) Crear conversación si no existe
-    const createAttempts: Array<{ url: string }> = [
-      { url: '/conversations' },
-      { url: '/conversations/' },
-    ];
-    for (const attempt of createAttempts) {
+    const createPayload = { locationId, contactId };
+    for (const url of ['/conversations/', '/conversations']) {
       try {
-        const { data } = await http.post(attempt.url, { locationId, contactId });
+        const { data } = await http.post(url, createPayload);
+        this.logger.log(`Conversación creada para el contacto ${contactId}`);
         return (data?.conversation || data);
       } catch (err: any) {
         const status = err?.response?.status;
         const msg = err?.response?.data ? JSON.stringify(err.response.data) : err?.message;
-        this.logger.debug(`[findOrCreateGhlConversation] POST ${attempt.url} failed: ${status} ${msg}`);
+        this.logger.debug(`[findOrCreateGhlConversation] POST ${url} failed: ${status} ${msg}`);
       }
     }
     this.logger.error('Error creating conversation in GHL for contact ' + contactId + ' at location ' + locationId);

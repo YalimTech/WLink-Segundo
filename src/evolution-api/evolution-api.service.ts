@@ -393,49 +393,34 @@ export class EvolutionApiService extends BaseAdapter<
     locationId: string,
     phone: string,
     name: string,
-    instanceName: string, // CAMBIO: Parámetro 'instanceId' a 'instanceName'
-    preserveExistingName: boolean = false,
   ): Promise<GhlContact> {
-    const httpClient = await this.getHttpClient(locationId);
-    const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
-    // CAMBIO: Usar 'instanceName' para la etiqueta
-    const tag = `whatsapp-instance-${instanceName}`;
-
-    const upsertPayload: any = {
-      locationId: locationId,
-      phone: formattedPhone,
-      tags: [tag],
-      source: 'EvolutionAPI Integration',
-    } as GhlContactUpsertRequest;
-    if (!preserveExistingName && name) {
-      // Solo establecer nombre si viene de Evolution (pushName). No usar fallback "User ####".
-      upsertPayload.name = name;
+    // 1) Intentar buscar el contacto existente por teléfono (maneja 400/404 internamente)
+    const existing = await this.getGhlContactByPhone(locationId, phone);
+    if (existing) {
+      this.logger.log(`Contacto existente encontrado por teléfono: ${existing.id}`);
+      return existing;
     }
-    // Intento de enriquecer con avatar si existe en Evolution
-    try {
-      const remoteJid = `${this.normalizeDigits(phone)}@s.whatsapp.net`;
-      const instance = await this.prisma.getInstance(instanceName);
-      if (instance?.apiTokenInstance) {
-        const avatarUrl = await this.evolutionService.getProfilePic(
-          instance.apiTokenInstance,
-          instance.instanceName,
-          remoteJid,
-        );
-        if (avatarUrl) {
-          (upsertPayload as any).avatarUrl = avatarUrl;
-        }
-      }
-    } catch {}
+
+    // 2) Si no existe, crearlo de forma segura mediante upsert
+    this.logger.log(`Contacto no encontrado para ${phone}, se creará uno nuevo.`);
+    const httpClient = await this.getHttpClient(locationId);
+    const formattedPhone = this.normalizePhoneE164(phone);
+    const upsertPayload: GhlContactUpsertRequest | any = {
+      locationId,
+      phone: formattedPhone,
+      name,
+      source: 'WhatsApp WLink',
+    };
 
     const { data } = await httpClient.post<GhlContactUpsertResponse>(
       '/contacts/upsert',
       upsertPayload,
     );
     if (!data?.contact) {
-      throw new IntegrationError(
-        'Could not get contact from GHL upsert response.',
-      );
+      this.logger.error('Error crítico al crear/actualizar contacto en GHL: respuesta sin contacto');
+      throw new IntegrationError('Could not create/upsert contact in GHL');
     }
+    this.logger.log(`Contacto creado con ID: ${data.contact.id}`);
     return data.contact;
   }
 
@@ -446,19 +431,26 @@ export class EvolutionApiService extends BaseAdapter<
     name: string,
     preserveExistingName: boolean = false,
   ): Promise<GhlContact> {
+    // 1) Buscar primero por teléfono
+    const existing = await this.getGhlContactByPhone(instance.locationId, phone);
+    if (existing) {
+      this.logger.log(`Contacto existente encontrado por teléfono: ${existing.id}`);
+      return existing as GhlContact;
+    }
+
+    // 2) Crear mediante upsert sólo si es estrictamente necesario
     const httpClient = await this.getHttpClient(instance.locationId);
-    const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
+    const formattedPhone = this.normalizePhoneE164(phone);
     const tag = `whatsapp-instance-${instance.instanceName}`;
 
-    const upsertPayload: any = {
+    const upsertPayload: GhlContactUpsertRequest | any = {
       locationId: instance.locationId,
       phone: formattedPhone,
       tags: [tag],
       source: 'EvolutionAPI Integration',
-    } as GhlContactUpsertRequest;
-    if (!preserveExistingName && name) {
-      upsertPayload.name = name;
-    }
+    };
+    if (!preserveExistingName && name) upsertPayload.name = name;
+
     try {
       const remoteJid = `${this.normalizeDigits(phone)}@s.whatsapp.net`;
       const avatarUrl = await this.evolutionService.getProfilePic(

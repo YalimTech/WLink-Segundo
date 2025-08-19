@@ -107,7 +107,7 @@ export class EvolutionApiService extends BaseAdapter<
   private async refreshGhlAccessToken(refreshToken: string): Promise<any> {
     const body = new URLSearchParams({
       // **CORRECCIÓN AQUÍ:** Se cambió 'GHL_CLIENT_CLIENT_ID' a 'GHL_CLIENT_ID'
-      client_id: this.configService.get('GHL_CLIENT_ID')!, 
+      client_id: this.configService.get('GHL_CLIENT_ID')!,
       client_secret: this.configService.get('GHL_CLIENT_SECRET')!,
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
@@ -207,6 +207,81 @@ export class EvolutionApiService extends BaseAdapter<
         `Error fetching contact by id in GHL. Status: ${axiosError.response?.status}, Data: ${JSON.stringify(axiosError.response?.data)}`,
       );
       throw error;
+    }
+  }
+
+  /**
+   * Busca una conversación existente para un contacto, o crea una nueva si no existe.
+   */
+  private async findOrCreateGhlConversation(
+    locationId: string,
+    contactId: string,
+  ): Promise<any | null> {
+    const http = await this.getHttpClient(locationId);
+    // Intentos de búsqueda (diferentes rutas usadas según tenant)
+    const searchAttempts: Array<{ url: string; params?: any }> = [
+      { url: '/conversations/search', params: { locationId, contactId } },
+      { url: '/conversations', params: { locationId, contactId } },
+      { url: '/conversations/', params: { locationId, contactId } },
+    ];
+    for (const attempt of searchAttempts) {
+      try {
+        const { data } = await http.get(attempt.url, { params: attempt.params });
+        const list: any[] = (data?.conversations || data?.data || data);
+        if (Array.isArray(list) && list.length > 0) {
+          return list[0];
+        }
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const msg = err?.response?.data ? JSON.stringify(err.response.data) : err?.message;
+        this.logger.debug(`[findOrCreateGhlConversation] GET ${attempt.url} failed: ${status} ${msg}`);
+      }
+    }
+    // 2) Crear conversación si no existe
+    const createAttempts: Array<{ url: string }> = [
+      { url: '/conversations' },
+      { url: '/conversations/' },
+    ];
+    for (const attempt of createAttempts) {
+      try {
+        const { data } = await http.post(attempt.url, { locationId, contactId });
+        return (data?.conversation || data);
+      } catch (err: any) {
+        const status = err?.response?.status;
+        const msg = err?.response?.data ? JSON.stringify(err.response.data) : err?.message;
+        this.logger.debug(`[findOrCreateGhlConversation] POST ${attempt.url} failed: ${status} ${msg}`);
+      }
+    }
+    this.logger.error('Error creating conversation in GHL for contact ' + contactId + ' at location ' + locationId);
+    return null;
+  }
+
+  /**
+   * Envía un mensaje usando el endpoint /conversations/messages/inbound asegurando conversationId.
+   */
+  private async postInboundMessage(
+    locationId: string,
+    conversationId: string,
+    contactId: string,
+    body: string,
+    direction: 'inbound' | 'outbound',
+    userId?: string,
+  ): Promise<void> {
+    const http = await this.getHttpClient(locationId);
+    const payload: any = {
+      type: 'SMS',
+      conversationId,
+      contactId,
+      body,
+      direction,
+    };
+    if (userId && direction === 'outbound') payload.userId = userId;
+    try {
+      await http.post('/conversations/messages/inbound', payload);
+      this.logger.log(`Mensaje enviado exitosamente a la conversación ${conversationId}`);
+    } catch (error: any) {
+      this.logger.error('Error enviando mensaje a GHL /inbound:', error?.response?.data || error?.message);
+      throw new IntegrationError('Failed to post inbound message to GHL.');
     }
   }
 
@@ -328,7 +403,7 @@ export class EvolutionApiService extends BaseAdapter<
     const httpClient = await this.getHttpClient(locationId);
     const formattedPhone = phone.startsWith('+') ? phone : `+${phone}`;
     // CAMBIO: Usar 'instanceName' para la etiqueta
-    const tag = `whatsapp-instance-${instanceName}`; 
+    const tag = `whatsapp-instance-${instanceName}`;
 
     const upsertPayload: any = {
       locationId: locationId,
@@ -413,7 +488,7 @@ export class EvolutionApiService extends BaseAdapter<
     instanceName: string, // CAMBIO: Parámetro 'instanceId' a 'instanceName'
   ): Promise<void> {
     // CAMBIO: Usar 'instanceName' para buscar la instancia
-    const instance = await this.prisma.getInstance(instanceName); 
+    const instance = await this.prisma.getInstance(instanceName);
     if (!instance) throw new NotFoundError(`Instance ${instanceName} not found`); // CAMBIO: Usar 'instanceName'
     if (instance.state !== 'authorized')
       throw new IntegrationError(`Instance ${instanceName} is not authorized`); // CAMBIO: Usar 'instanceName'
@@ -560,29 +635,32 @@ export class EvolutionApiService extends BaseAdapter<
       }
 
       const transformedMsg = this.transformer.toPlatformMessage(webhook);
-      // Asegurar direction consistente: outbound si fromMe, inbound si no
-      transformedMsg.direction = isFromAgent ? 'outbound' : 'inbound';
-      transformedMsg.contactId = ghlContact.id;
-      transformedMsg.locationId = instance.locationId;
-      // Para outbound, intenta adjuntar el userId del agente priorizando el mapeo por instancia
+      const direction: 'inbound' | 'outbound' = isFromAgent ? 'outbound' : 'inbound';
+      const messageBody = (transformedMsg as any).body ?? transformedMsg.message ?? '';
+
+      // Resolver conversationId antes de enviar
+      const conversation = await this.findOrCreateGhlConversation(instance.locationId, ghlContact.id);
+      if (!conversation) {
+        this.logger.error(`[EvolutionApiService] Could not find or create conversation for contact ${ghlContact.id}`);
+        return;
+      }
+      const conversationId: string = (conversation?.id || (conversation as any)?.conversationId || (conversation as any)?.conversation?.id);
+
+      let agentUserId: string | undefined = undefined;
       if (isFromAgent) {
         try {
           // 1) Intentar identificar al agente por el número "sender" del webhook (número de la instancia/agent)
           const senderJid: string | undefined = (webhook as any)?.sender;
           let agentDigits = '';
-          if (senderJid) {
-            agentDigits = this.normalizeDigits(senderJid.split('@')[0]);
-          }
+          if (senderJid) agentDigits = this.normalizeDigits(senderJid.split('@')[0]);
           if (!agentDigits && (instance.settings as any)?.agentPhone) {
             agentDigits = this.normalizeDigits((instance.settings as any)?.agentPhone);
           }
-
           if (agentDigits) {
             const ghlUser = await this.findGhlUserByPhone(instance.locationId, agentDigits);
             if (ghlUser?.id && this.isValidGhlUserId(ghlUser.id, instance.locationId)) {
-              (transformedMsg as any).userId = ghlUser.id;
+              agentUserId = ghlUser.id;
               this.logger.log(`[EvolutionApiService] Outbound message attributed to agent ${ghlUser.firstName || ''} ${ghlUser.lastName || ''} (ID: ${ghlUser.id}).`);
-              // Cachear el mapeo en settings para próximos mensajes
               try {
                 const newSettings = { ...(instance.settings || {}) } as any;
                 newSettings.agentUserId = ghlUser.id;
@@ -591,12 +669,10 @@ export class EvolutionApiService extends BaseAdapter<
               } catch {}
             }
           }
-
-          // 2) Fallback limitado: si ya hay un mapeo explícito previo, úsalo. Evitar defaults globales.
-          if (!(transformedMsg as any).userId) {
+          if (!agentUserId) {
             const mapped = (instance.settings as any)?.agentUserId as string | undefined;
             if (this.isValidGhlUserId(mapped, instance.locationId)) {
-              (transformedMsg as any).userId = mapped;
+              agentUserId = mapped;
               this.logger.log(`[EvolutionApiService] Using previously mapped agentUserId from settings for instance '${instance.instanceName}'.`);
             } else {
               this.logger.warn('[EvolutionApiService] Could not resolve agent userId for outbound message; sending without user attribution.');
@@ -604,7 +680,15 @@ export class EvolutionApiService extends BaseAdapter<
           }
         } catch {}
       }
-      await this.postInboundMessageToGhl(instance.locationId, transformedMsg);
+
+      await this.postInboundMessage(
+        instance.locationId,
+        conversationId,
+        ghlContact.id,
+        messageBody,
+        direction,
+        agentUserId,
+      );
       this.logger.log(`[EvolutionApiService] Message upsert processed for instance '${instanceName}'.`);
     } else {
       this.logger.log(`[EvolutionApiService] Evolution Webhook event '${webhook.event}' received for instance '${instanceName}'. No specific handler or missing data. Full Payload: ${JSON.stringify(webhook)}`);
@@ -642,7 +726,7 @@ export class EvolutionApiService extends BaseAdapter<
     try {
       this.logger.log(`[EvolutionApiService] Validating credentials for Evolution API Instance Name: '${evolutionApiInstanceName}'...`); // CAMBIO: Logs
       const isValid = await this.evolutionService.validateInstanceCredentials(
-        apiToken, 
+        apiToken,
         evolutionApiInstanceName, // CAMBIO: Usar evolutionApiInstanceName
       );
       if (!isValid) {
@@ -674,7 +758,7 @@ export class EvolutionApiService extends BaseAdapter<
       const newInstance = await this.prisma.createInstance({
         instanceName: evolutionApiInstanceName, // CAMBIO: instanceName será el ID único de Evolution API
         instanceId: providedInstanceId || statusInfo?.instance?.instanceId || null, // Preferir el proporcionado
-        apiTokenInstance: apiToken, 
+        apiTokenInstance: apiToken,
         user: { connect: { locationId: locationId } }, // CAMBIO: Usar locationId para conectar al usuario
         customName: customName || `Instance ${evolutionApiInstanceName}`, // Se usa el customName, o uno por defecto
         state: mappedState,
